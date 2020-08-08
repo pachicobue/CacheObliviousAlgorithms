@@ -3,6 +3,7 @@
 #include "data_cache.hpp"
 #include "output_utility.hpp"
 #include "rng_utility.hpp"
+#include "safe_array.hpp"
 
 namespace {
 struct Data
@@ -24,8 +25,8 @@ Data randomData()
 
 TEST(DataCacheTest, Constructor_Valid)
 {
-    const std::size_t B = 4;
-    const std::size_t M = 20;
+    const std::size_t B = 8;
+    const std::size_t M = 40;
     data_cache dcache(B, M);
     ASSERT_EQ(dcache.page_size(), B);
     ASSERT_EQ(dcache.cache_size(), M);
@@ -36,31 +37,37 @@ TEST(DataCacheTest, Constructor_Valid)
 TEST(DataCacheTest, Constructor_Invalid)
 {
     ASSERT_DEATH({
-        const std::size_t B = 100;
+        const std::size_t B = 104;
         const std::size_t M = 0;
         data_cache dcache(B, M);
     },
                  "Assertion.*failed");
     ASSERT_DEATH({
         const std::size_t B = 0;
+        const std::size_t M = 40;
+        data_cache dcache(B, M);
+    },
+                 "Assertion.*failed");
+    ASSERT_DEATH({
+        const std::size_t B = 8;
         const std::size_t M = 20;
         data_cache dcache(B, M);
     },
                  "Assertion.*failed");
     ASSERT_DEATH({
         const std::size_t B = 3;
-        const std::size_t M = 5;
+        const std::size_t M = 9;
         data_cache dcache(B, M);
     },
                  "Assertion.*failed");
 }
 TEST(DataCacheTest, Read_Sequential)
 {
-    const std::size_t B = 10;
+    const std::size_t B = 8;
     const std::size_t M = 120;
     data_cache dcache(B, M);
     const std::size_t N = 100;
-    std::vector<Data> datas(N);
+    safe_array<Data> datas(B, N);
     for (std::size_t i = 0; i < N; i++) { datas[i] = randomData(); }
     const std::size_t T = 1000;
     for (std::size_t t = 0; t < T; t++) {
@@ -71,11 +78,11 @@ TEST(DataCacheTest, Read_Sequential)
 }
 TEST(DataCacheTest, Read_Random)
 {
-    const std::size_t B = 10;
+    const std::size_t B = 8;
     const std::size_t M = 120;
     data_cache dcache(B, M);
     const std::size_t N = 100;
-    std::vector<Data> datas(N);
+    safe_array<Data> datas(B, N);
     for (std::size_t i = 0; i < N; i++) { datas[i] = randomData(); }
     const std::size_t T = 1000;
     for (std::size_t t = 0; t < T; t++) {
@@ -86,12 +93,12 @@ TEST(DataCacheTest, Read_Random)
 }
 TEST(DataCacheTest, Write_Sequential)
 {
-    const std::size_t B = 20;
-    const std::size_t M = 120;
+    const std::size_t B = 16;
+    const std::size_t M = 160;
     data_cache dcache(B, M);
     const std::size_t N = 100;
-    std::vector<Data> datas(N);
-    std::vector<Data> dests(N);
+    safe_array<Data> datas(B, N);
+    safe_array<Data> dests(B, N);
     for (std::size_t i = 0; i < N; i++) { datas[i] = randomData(); }
     const std::size_t T = 1000;
     for (std::size_t t = 0; t < T; t++) {
@@ -111,12 +118,12 @@ TEST(DataCacheTest, Write_Sequential)
 
 TEST(DataCacheTest, Write_Random)
 {
-    const std::size_t B = 20;
-    const std::size_t M = 120;
+    const std::size_t B = 16;
+    const std::size_t M = 160;
     data_cache dcache(B, M);
     const std::size_t N = 100;
-    std::vector<Data> datas(N);
-    std::vector<Data> dests(N);
+    safe_array<Data> datas(B, N);
+    safe_array<Data> dests(B, N);
     for (std::size_t i = 0; i < N; i++) { datas[i] = randomData(); }
     const std::size_t T = 1000;
     for (std::size_t t = 0; t < T; t++) {
@@ -134,12 +141,16 @@ TEST(DataCacheTest, Write_Random)
 
 TEST(DataCacheTest, ReadWrite)
 {
-    const std::size_t B = 20;
-    const std::size_t M = 120;
+    const std::size_t B = 16;
+    const std::size_t M = 160;
     data_cache dcache(B, M);
     const std::size_t N = 100;
-    std::vector<Data> datas(N);
+    safe_array<Data> datas(B, N);
     std::vector<Data> actuals(N);
+    for (std::size_t i = 0; i < N; i++) {
+        const Data data = randomData();
+        datas[i] = data, actuals[i] = data;
+    }
     const std::size_t T = 10000;
     for (std::size_t t = 0; t < T; t++) {
         const std::size_t type  = rng.val<std::size_t>(0, 1);
