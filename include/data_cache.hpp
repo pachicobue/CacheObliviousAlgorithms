@@ -55,7 +55,8 @@ public:
     std::size_t cacheline_num() const;
     statistic_info statistic() const;
 
-    void print_status() const;
+    void print_summary() const;
+    void debug_print() const;
 
 private:
     uintptr_t get_page_addr(const uintptr_t addr);

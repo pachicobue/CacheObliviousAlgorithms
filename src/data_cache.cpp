@@ -7,6 +7,7 @@
 data_cache::data_cache(const std::size_t B, const std::size_t M) : m_page_size{B}, m_cache_size{M}, m_cacheline_num{(assert(B > 0), M / B)}, m_data_buffers(m_cacheline_num, std::vector<std::byte>(m_page_size))
 {
     assert(B > 0 and M > 0);
+    assert(B % 8 == 0);
     assert(M % B == 0);
     for (std::size_t i = 0; i < m_cacheline_num; i++) { m_empty_indexes.insert(i); }
 }
@@ -15,7 +16,7 @@ std::size_t data_cache::page_size() const { return m_page_size; }
 std::size_t data_cache::cache_size() const { return m_cache_size; }
 std::size_t data_cache::cacheline_num() const { return m_cacheline_num; }
 statistic_info data_cache::statistic() const { return m_statistic; }
-void data_cache::print_status() const
+void data_cache::print_summary() const
 {
     std::cout << "[Cache Property]" << std::endl;
     std::cout << "- page size (B): " << m_page_size << " byte" << std::endl;
@@ -24,6 +25,10 @@ void data_cache::print_status() const
     std::cout << "[Statistics]" << std::endl;
     std::cout << "- disk write   : " << m_statistic.disk_write_count << " times" << std::endl;
     std::cout << "- disk read    : " << m_statistic.disk_read_count << " times" << std::endl;
+}
+void data_cache::debug_print() const
+{
+    print_summary();
     std::cout << "[Internal Status]" << std::endl;
     std::cout << "- time         : " << m_time << std::endl;
     std::cout << "- empty lines  : " << m_empty_indexes << std::endl;
