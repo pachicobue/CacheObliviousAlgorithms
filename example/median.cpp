@@ -70,7 +70,7 @@ int main()
         std::cout << ">> ";
         std::size_t B, M;
         std::cin >> B >> M;
-        std::cout << "Input: Type   (0: manual, 1:random)" << std::endl;
+        std::cout << "Input: Type   (0: manual test, 1:random test)" << std::endl;
         std::cout << ">> ";
         int Type = 0;
         std::cin >> Type;
@@ -92,11 +92,7 @@ int main()
         } else {
             safe_array<T> as(B, N);
             for (std::size_t i = 0; i < N; i++) { as[i] = rng.val<T>(-10, 10); }
-            std::cout << "A: {";
-            for (std::size_t i = 0; i < N; i++) { std::cout << +as[i] << " "; }
-            std::cout << "}" << std::endl;
-            const auto med = median(B, M, N, as);
-            std::cout << "Median of A[] is " << +med << std::endl;
+            median(B, M, N, as);
         }
     }
     return 0;
