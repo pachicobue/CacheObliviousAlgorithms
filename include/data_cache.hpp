@@ -1,56 +1,79 @@
 #pragma once
-#include <cstdint>
+#include <map>
 #include <set>
 #include <vector>
 
+#include "page_item.hpp"
+#include "statistic_info.hpp"
 /**
- * @brief DCacheの仮想化
+ * @brief Data Cacheの仮想化
  * @details
- *   パラメータ B = 一回に読む要素数
- *   パラメータ M = キャッシュ要素数
+ * - ブロックサイズはB (B個のuintptr_t)
+ * - メモリサイズはM
+ * - Fully Assiciative
+ * - Replacement PolicyはLRU
  */
 class data_cache
 {
 public:
     /**
      * @brief コンストラクタ
-     * @param B[in] 一回に読む要素数
-     * @param M[in] キャッシュ要素数
+     * @param B[in] ページサイズ
+     * @param M[in] メモリサイズ
      */
     data_cache(const std::size_t B, const std::size_t M);
-
     /**
-     * @brief 指定アドレスがキャッシュに存在するか
-     * @param addr[in] アドレス
+     * @brief デストラクタ
      */
-    bool contain(const std::uintptr_t addr) const;
-
+    ~data_cache();
     /**
-     * @brief アドレスブロックを挿入する
-     * @param addr_block[in] アドレスブロック
-     * @details LURでの追い出し＋TSの更新も行う
+     * @brief 値書き込み
+     * @param addr[in] 書き込み先のディスクアドレス
+     * @param val[in] 書きこむデータ
      */
-    void insert(const std::vector<std::uintptr_t>& addr_block);
-
+    template<typename T>
+    void disk_write(const uintptr_t addr, const T& val) { write(addr, reinterpret_cast<const std::byte*>(&val), sizeof(val)); }
     /**
-     * @brief 指定アドレスをキャッシュから消す
-     * @param addr[in] アドレス
+     * @brief 値読み込み
+     * @param addr[in] 読み込み元のディスクアドレス
      */
-    void erase(const std::uintptr_t addr);
-
+    template<typename T>
+    T disk_read(const uintptr_t addr)
+    {
+        T val;
+        read(addr, reinterpret_cast<std::byte*>(&val), sizeof(T));
+        return val;
+    }
     /**
-     * @brief ブロックサイズ B
+     * @brief Flush操作
+     * @details update状態で残ったページを実際に書きこむ
      */
-    std::size_t block_size() const;
+    void flush();
 
-    /**
-     * @brief キャッシュサイズ M
-     */
+    std::size_t page_size() const;
     std::size_t cache_size() const;
+    std::size_t cacheline_num() const;
+    statistic_info statistic() const;
+
+    void print_status() const;
 
 private:
-    const std::size_t m_block_size, m_cache_size;
-    std::uint64_t m_time;
-    std::set<std::pair<std::uintptr_t, uint64_t>> m_items;
-    std::set<std::pair<uint64_t, std::uintptr_t>> m_metis;
+    uintptr_t get_page_addr(const uintptr_t addr);
+    std::set<page_item, page_item::addr_comparator_t>::iterator find_by_addr(const uintptr_t page_addr);
+    void delete_LRU();
+    void insert_cache(const uintptr_t page_addr, const bool update);
+    void write(const uintptr_t addr, const std::byte* data, const std::size_t size);
+    void read(const uintptr_t addr, std::byte* buf, const std::size_t size);
+
+    const std::size_t m_page_size;
+    const std::size_t m_cache_size;
+    const std::size_t m_cacheline_num;
+
+    statistic_info m_statistic;
+    uint64_t m_time = 0;
+
+    std::set<page_item, page_item::time_comparator_t> m_pages_by_time;
+    std::set<page_item, page_item::addr_comparator_t> m_pages_by_addr;
+    std::set<std::size_t> m_empty_indexes;
+    std::vector<std::vector<std::byte>> m_data_buffers;
 };
