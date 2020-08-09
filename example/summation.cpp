@@ -17,52 +17,28 @@
  *     sum += A[i]
  */
 using T = int8_t;
-long long sum(const std::size_t B, const std::size_t M, safe_array<T> as)
+template<std::size_t B, std::size_t M>
+void Summation(const std::size_t N)
 {
-    const std::size_t N = as.size();
-    data_cache dcache(B, M);
+    safe_array<T, B> as(N);
+    for (std::size_t i = 0; i < N; i++) { as[i] = rng.val<T>(-100, 100); }
+    data_cache<B, M> dcache;
     long long S = 0;
-    for (std::size_t i = 0; i < N; i++) { S += dcache.disk_read<T>(reinterpret_cast<uintptr_t>(&as[i])); }
+    for (std::size_t i = 0; i < N; i++) { S += dcache.template disk_read<T>(reinterpret_cast<uintptr_t>(&as[i])); }
     long long actual = 0;
     for (std::size_t i = 0; i < N; i++) { actual += as[i]; }
     assert(S == actual);
-    dcache.print_summary();
-    return S;
+    const std::size_t QR = dcache.statistic().disk_read_count;
+    const std::size_t QW = dcache.statistic().disk_write_count;
+    std::cout << N << " " << B << " " << M << "   " << QR << " " << QW << std::endl;
 }
 
 int main()
 {
-    while (true) {
-        std::cout << std::endl;
-        std::cout << "# Summation Algorithm" << std::endl;
-        std::cout << "Input: B M" << std::endl;
-        std::cout << ">> ";
-        std::size_t B, M;
-        std::cin >> B >> M;
-        std::cout << "Input: Type   (0: manual test, 1:random test)" << std::endl;
-        std::cout << ">> ";
-        int Type = 0;
-        std::cin >> Type;
-        std::cout << "Input: N" << std::endl;
-        std::cout << ">> ";
-        std::size_t N;
-        std::cin >> N;
-        if (Type == 0) {
-            safe_array<T> as(B, N);
-            std::cout << "Input: A[0] A[1] A[2] ... A[N-1]  (Be careful to avoid overflow!)" << std::endl;
-            std::cout << ">> ";
-            for (std::size_t i = 0; i < N; i++) {
-                int a;
-                std::cin >> a;
-                as[i] = static_cast<T>(a);
-            }
-            const long long S = sum(B, M, as);
-            std::cout << "Sum of A[] is " << S << std::endl;
-        } else {
-            safe_array<T> as(B, N);
-            for (std::size_t i = 0; i < N; i++) { as[i] = rng.val<T>(-10, 10); }
-            sum(B, M, as);
-        }
-    }
+    std::cout << "# N B M : Q(Read) Q(Write)" << std::endl;
+    Summation<1, 1000>(10000);
+    Summation<10, 1000>(10000);
+    Summation<100, 1000>(10000);
+    Summation<1000, 1000>(10000);
     return 0;
 }

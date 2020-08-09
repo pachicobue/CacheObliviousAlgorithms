@@ -18,6 +18,8 @@ function(add_test src_name)
 endfunction(add_test)
 
 add_executable(main main.cpp)
+add_executable(summation example/summation.cpp)
+add_executable(median example/median.cpp)
 add_test(safe_array)
 add_test(data_cache)
 add_test(b_tree)
