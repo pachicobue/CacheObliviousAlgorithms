@@ -1,8 +1,6 @@
-#include <algorithm>
 #include <gtest/gtest.h>
 
 #include "data_cache.hpp"
-#include "output_utility.hpp"
 #include "rng_utility.hpp"
 #include "safe_array.hpp"
 
@@ -27,45 +25,24 @@ Data randomData()
 }
 }  // anonymous namespace
 
-TEST(DataCacheTest, Constructor_Valid)
+TEST(DataCacheTest, Constructor)
 {
-    const std::size_t B = 8;
-    const std::size_t M = 40;
-    data_cache dcache(B, M);
-    ASSERT_EQ(dcache.page_size(), B);
-    ASSERT_EQ(dcache.cache_size(), M);
-    ASSERT_EQ(dcache.cacheline_num(), M / B);
+    constexpr std::size_t B = 8;
+    constexpr std::size_t M = 40;
+    data_cache<B, M> dcache;
+    ASSERT_EQ(dcache.PageSize, B);
+    ASSERT_EQ(dcache.CacheSize, M);
+    ASSERT_EQ(dcache.CacheLineNum, M / B);
     ASSERT_EQ(dcache.statistic().disk_read_count, 0);
     ASSERT_EQ(dcache.statistic().disk_write_count, 0);
 }
-TEST(DataCacheTest, Constructor_Invalid)
-{
-    ASSERT_DEATH({
-        const std::size_t B = 104;
-        const std::size_t M = 0;
-        data_cache dcache(B, M);
-    },
-                 "Assertion.*failed");
-    ASSERT_DEATH({
-        const std::size_t B = 0;
-        const std::size_t M = 40;
-        data_cache dcache(B, M);
-    },
-                 "Assertion.*failed");
-    ASSERT_DEATH({
-        const std::size_t B = 8;
-        const std::size_t M = 20;
-        data_cache dcache(B, M);
-    },
-                 "Assertion.*failed");
-}
 TEST(DataCacheTest, Read_Sequential)
 {
-    const std::size_t B = 8;
-    const std::size_t M = 120;
-    data_cache dcache(B, M);
+    constexpr std::size_t B = 8;
+    constexpr std::size_t M = 120;
+    data_cache<B, M> dcache;
     const std::size_t N = 100;
-    safe_array<Data> datas(B, N);
+    safe_array<Data, B> datas(N);
     for (std::size_t i = 0; i < N; i++) { datas[i] = randomData(); }
     const std::size_t T = 1000;
     for (std::size_t t = 0; t < T; t++) {
@@ -76,11 +53,11 @@ TEST(DataCacheTest, Read_Sequential)
 }
 TEST(DataCacheTest, Read_Random)
 {
-    const std::size_t B = 8;
-    const std::size_t M = 120;
-    data_cache dcache(B, M);
+    constexpr std::size_t B = 8;
+    constexpr std::size_t M = 120;
+    data_cache<B, M> dcache;
     const std::size_t N = 100;
-    safe_array<Data> datas(B, N);
+    safe_array<Data, B> datas(N);
     for (std::size_t i = 0; i < N; i++) { datas[i] = randomData(); }
     const std::size_t T = 1000;
     for (std::size_t t = 0; t < T; t++) {
@@ -91,12 +68,12 @@ TEST(DataCacheTest, Read_Random)
 }
 TEST(DataCacheTest, Write_Sequential)
 {
-    const std::size_t B = 16;
-    const std::size_t M = 160;
-    data_cache dcache(B, M);
+    constexpr std::size_t B = 16;
+    constexpr std::size_t M = 160;
+    data_cache<B, M> dcache;
     const std::size_t N = 100;
     std::vector<Data> datas(N);
-    safe_array<Data> dests(B, N);
+    safe_array<Data, B> dests(N);
     for (std::size_t i = 0; i < N; i++) { datas[i] = randomData(); }
     const std::size_t T = 1000;
     for (std::size_t t = 0; t < T; t++) {
@@ -116,12 +93,12 @@ TEST(DataCacheTest, Write_Sequential)
 
 TEST(DataCacheTest, Write_Random)
 {
-    const std::size_t B = 16;
-    const std::size_t M = 160;
-    data_cache dcache(B, M);
+    constexpr std::size_t B = 16;
+    constexpr std::size_t M = 160;
+    data_cache<B, M> dcache;
     const std::size_t N = 100;
     std::vector<Data> datas(N);
-    safe_array<Data> dests(B, N);
+    safe_array<Data, B> dests(N);
     for (std::size_t i = 0; i < N; i++) { datas[i] = randomData(); }
     const std::size_t T = 1000;
     for (std::size_t t = 0; t < T; t++) {
@@ -139,11 +116,11 @@ TEST(DataCacheTest, Write_Random)
 
 TEST(DataCacheTest, ReadWrite)
 {
-    const std::size_t B = 16;
-    const std::size_t M = 160;
-    data_cache dcache(B, M);
+    constexpr std::size_t B = 16;
+    constexpr std::size_t M = 160;
+    data_cache<B, M> dcache;
     const std::size_t N = 100;
-    safe_array<Data> datas(B, N);
+    safe_array<Data, B> datas(N);
     std::vector<Data> actuals(N);
     for (std::size_t i = 0; i < N; i++) {
         const Data data = randomData();

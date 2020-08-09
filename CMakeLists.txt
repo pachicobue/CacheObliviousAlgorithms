@@ -9,19 +9,15 @@ project(CacheObliviousAlgorithms CXX)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 include_directories("include")
 
-
-add_executable(main main.cpp src/data_cache.cpp)
-
-add_executable(summation example/summation.cpp src/data_cache.cpp)
-add_executable(median example/median.cpp src/data_cache.cpp)
-
-
 add_subdirectory(thirdparty/googletest/googletest)
+function(add_test src_name)
+  set(test_name ${src_name}_test)
+  add_executable(${test_name} test/${test_name}.cpp)
+  target_link_libraries(${test_name} gtest_main pthread)
+  target_include_directories(${test_name} PUBLIC thirdparty/gtest/googletest/include)  
+endfunction(add_test)
 
-add_executable(safe_array_test test/safe_array_test.cpp)
-target_link_libraries(safe_array_test gtest_main pthread)
-target_include_directories(safe_array_test PUBLIC thirdparty/gtest/googletest/include)  
-
-add_executable(data_cache_test test/data_cache_test.cpp src/data_cache.cpp)
-target_link_libraries(data_cache_test gtest_main pthread)
-target_include_directories(data_cache_test PUBLIC thirdparty/gtest/googletest/include)  
+add_executable(main main.cpp)
+add_test(safe_array)
+add_test(data_cache)
+add_test(b_tree)

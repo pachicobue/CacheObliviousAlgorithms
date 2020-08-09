@@ -4,22 +4,22 @@
 #include "rng_utility.hpp"
 #include "safe_array.hpp"
 
-TEST(SafeArrayTest, Constructor_Valid)
+TEST(SafeArrayTest, Constructor)
 {
-    const std::size_t B = 16;
-    const std::size_t N = 100;
-    safe_array<int> as(B, N);
+    constexpr std::size_t B = 16;
+    const std::size_t N     = 100;
+    safe_array<int, B> as(N);
     ASSERT_EQ(reinterpret_cast<uintptr_t>(&as[0]) % B, 0);
     for (std::size_t i = 0; i < N; i++) { ASSERT_EQ(as[i], 0); }
-    safe_array<int> bs(B, N, 100);
+    safe_array<int, B> bs(N, 100);
     for (std::size_t i = 0; i < N; i++) { ASSERT_EQ(bs[i], 100); }
 }
 TEST(SafeArrayTest, RandomAccess)
 {
-    const std::size_t B = 16;
-    const std::size_t N = 100;
+    constexpr std::size_t B = 16;
+    const std::size_t N     = 100;
     std::vector<int> actuals(N);
-    safe_array<int> datas(B, N);
+    safe_array<int, B> datas(N);
     for (std::size_t i = 0; i < N; i++) {
         const int v = rng.val<int>(-100, 100);
         actuals[i] = v, datas[i] = v;
