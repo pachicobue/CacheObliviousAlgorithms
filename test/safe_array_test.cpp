@@ -4,6 +4,9 @@
 #include "rng_utility.hpp"
 #include "safe_array.hpp"
 
+namespace {
+constexpr uint64_t seed = 20190810;
+}
 TEST(SafeArrayTest, Constructor)
 {
     constexpr std::size_t B = 16;
@@ -16,6 +19,7 @@ TEST(SafeArrayTest, Constructor)
 }
 TEST(SafeArrayTest, RandomAccess)
 {
+    rng_base<std::mt19937> rng(seed);
     constexpr std::size_t B = 16;
     const std::size_t N     = 100;
     std::vector<int> actuals(N);

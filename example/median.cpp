@@ -8,7 +8,9 @@
 #include "rng_utility.hpp"
 #include "safe_array.hpp"
 
-using T = int8_t;
+namespace {
+using T                 = int;
+constexpr uint64_t seed = 20190810;
 template<std::size_t B, std::size_t M>
 T kth(const safe_array<T, B>& as, const std::size_t K, data_cache<B, M>& dcache)
 {
@@ -47,10 +49,12 @@ T kth(const safe_array<T, B>& as, const std::size_t K, data_cache<B, M>& dcache)
         return kth(cs, K, dcache);
     }
 }
+}  // namespace
 
 template<std::size_t B, std::size_t M>
 void Median(const std::size_t N)
 {
+    rng_base<std::mt19937> rng(seed);
     safe_array<T, B> as(N);
     for (std::size_t i = 0; i < N; i++) { as[i] = rng.val<T>(-100, 100); }
     data_cache<B, M> dcache;
@@ -62,15 +66,54 @@ void Median(const std::size_t N)
     assert(actual == med);
     const std::size_t QR = dcache.statistic().disk_read_count;
     const std::size_t QW = dcache.statistic().disk_write_count;
-    std::cout << N << " " << B << " " << M << "   " << QR << " " << QW << std::endl;
+    std::cout << std::setw(8) << N << " "
+              << std::setw(8) << B << " "
+              << std::setw(8) << M << " | "
+              << std::setw(8) << QR << " "
+              << std::setw(8) << QW << std::endl;
 }
 
 int main()
 {
-    std::cout << "# N B M : Q(Read) Q(Write)" << std::endl;
-    Median<1, 10000>(100000);
-    Median<10, 10000>(100000);
-    Median<100, 10000>(100000);
-    Median<1000, 10000>(100000);
+    std::cout << ("#" + std::string(6, ' ') + "N") << " "
+              << (std::string(7, ' ') + "B") << " "
+              << (std::string(7, ' ') + "M") << " | "
+              << (std::string(6, ' ') + "QR") << " "
+              << (std::string(6, ' ') + "QW") << std::endl;
+    {
+        const std::size_t N     = 16384;
+        constexpr std::size_t M = 8192;
+        Median<1, M>(N);
+        Median<2, M>(N);
+        Median<4, M>(N);
+        Median<8, M>(N);
+        Median<16, M>(N);
+        Median<32, M>(N);
+        Median<64, M>(N);
+        std::cout << std::endl;
+    }
+    {
+        const std::size_t N     = 32768;
+        constexpr std::size_t M = 8192;
+        Median<1, M>(N);
+        Median<2, M>(N);
+        Median<4, M>(N);
+        Median<8, M>(N);
+        Median<16, M>(N);
+        Median<32, M>(N);
+        Median<64, M>(N);
+        std::cout << std::endl;
+    }
+    {
+        const std::size_t N     = 65536;
+        constexpr std::size_t M = 8192;
+        Median<1, M>(N);
+        Median<2, M>(N);
+        Median<4, M>(N);
+        Median<8, M>(N);
+        Median<16, M>(N);
+        Median<32, M>(N);
+        Median<64, M>(N);
+    }
     return 0;
 }

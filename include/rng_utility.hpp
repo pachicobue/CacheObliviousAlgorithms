@@ -37,5 +37,3 @@ public:
 private:
     Rng rng;
 };
-rng_base<std::mt19937> rng;
-rng_base<std::mt19937_64> rng64;

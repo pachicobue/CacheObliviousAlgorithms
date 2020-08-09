@@ -5,6 +5,7 @@
 #include "safe_array.hpp"
 
 namespace {
+constexpr uint64_t seed = 20190810;
 struct Data
 {
     int a                = 0;
@@ -15,6 +16,7 @@ struct Data
 };
 Data randomData()
 {
+    rng_base<std::mt19937> rng(seed);
     Data data;
     data.a = rng.val<int>(-10, 10);
     data.b = static_cast<double>(rng.val<int>(0, 100)) / 100;
@@ -53,6 +55,7 @@ TEST(DataCacheTest, Read_Sequential)
 }
 TEST(DataCacheTest, Read_Random)
 {
+    rng_base<std::mt19937> rng(seed);
     constexpr std::size_t B = 8;
     constexpr std::size_t M = 120;
     data_cache<B, M> dcache;
@@ -93,6 +96,7 @@ TEST(DataCacheTest, Write_Sequential)
 
 TEST(DataCacheTest, Write_Random)
 {
+    rng_base<std::mt19937> rng(seed);
     constexpr std::size_t B = 16;
     constexpr std::size_t M = 160;
     data_cache<B, M> dcache;
@@ -116,6 +120,7 @@ TEST(DataCacheTest, Write_Random)
 
 TEST(DataCacheTest, ReadWrite)
 {
+    rng_base<std::mt19937> rng(seed);
     constexpr std::size_t B = 16;
     constexpr std::size_t M = 160;
     data_cache<B, M> dcache;

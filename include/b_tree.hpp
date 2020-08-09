@@ -17,7 +17,7 @@
  * - keysは昇順
  * - sons[i]に含まれるキーの値はkeys[i-1]とkeys[i]の間の値となっている
  */
-template<typename Key, std::size_t B, std::size_t M, std::size_t K>
+template<typename Key, std::size_t K, std::size_t B, std::size_t M>
 class b_tree
 {
     using key_t = Key;
