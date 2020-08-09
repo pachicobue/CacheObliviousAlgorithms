@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <gtest/gtest.h>
 
 #include "data_cache.hpp"
@@ -8,10 +9,11 @@
 namespace {
 struct Data
 {
-    int a                = 10;
-    double b             = 100;
-    unsigned long long c = 1000;
-    friend bool operator==(const Data& data1, const Data& data2) { return data1.a == data2.a and data1.b == data2.b and data1.c == data2.c; }
+    int a                = 0;
+    double b             = 0;
+    unsigned long long c = 0;
+    std::vector<int> d{};
+    friend bool operator==(const Data& data1, const Data& data2) { return data1.a == data2.a and data1.b == data2.b and data1.c == data2.c and data1.d == data2.d; }
 };
 Data randomData()
 {
@@ -19,6 +21,8 @@ Data randomData()
     data.a = rng.val<int>(-10, 10);
     data.b = static_cast<double>(rng.val<int>(0, 100)) / 100;
     data.c = rng.val<unsigned long long>(0, 1ULL << 60);
+    data.d = std::vector<int>(rng.val<int>(1, 3));
+    for (auto& e : data.d) { e = rng.val<int>(-10, 10); }
     return data;
 }
 }  // anonymous namespace
@@ -51,12 +55,6 @@ TEST(DataCacheTest, Constructor_Invalid)
     ASSERT_DEATH({
         const std::size_t B = 8;
         const std::size_t M = 20;
-        data_cache dcache(B, M);
-    },
-                 "Assertion.*failed");
-    ASSERT_DEATH({
-        const std::size_t B = 3;
-        const std::size_t M = 9;
         data_cache dcache(B, M);
     },
                  "Assertion.*failed");
@@ -97,7 +95,7 @@ TEST(DataCacheTest, Write_Sequential)
     const std::size_t M = 160;
     data_cache dcache(B, M);
     const std::size_t N = 100;
-    safe_array<Data> datas(B, N);
+    std::vector<Data> datas(N);
     safe_array<Data> dests(B, N);
     for (std::size_t i = 0; i < N; i++) { datas[i] = randomData(); }
     const std::size_t T = 1000;
@@ -122,7 +120,7 @@ TEST(DataCacheTest, Write_Random)
     const std::size_t M = 160;
     data_cache dcache(B, M);
     const std::size_t N = 100;
-    safe_array<Data> datas(B, N);
+    std::vector<Data> datas(N);
     safe_array<Data> dests(B, N);
     for (std::size_t i = 0; i < N; i++) { datas[i] = randomData(); }
     const std::size_t T = 1000;
@@ -149,7 +147,8 @@ TEST(DataCacheTest, ReadWrite)
     std::vector<Data> actuals(N);
     for (std::size_t i = 0; i < N; i++) {
         const Data data = randomData();
-        datas[i] = data, actuals[i] = data;
+        datas[i]        = data;
+        actuals[i]      = data;
     }
     const std::size_t T = 10000;
     for (std::size_t t = 0; t < T; t++) {

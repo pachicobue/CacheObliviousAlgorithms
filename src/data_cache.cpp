@@ -7,7 +7,6 @@
 data_cache::data_cache(const std::size_t B, const std::size_t M) : m_page_size{B}, m_cache_size{M}, m_cacheline_num{(assert(B > 0), M / B)}, m_data_buffers(m_cacheline_num, std::vector<std::byte>(m_page_size))
 {
     assert(B > 0 and M > 0);
-    assert(B % 8 == 0);
     assert(M % B == 0);
     for (std::size_t i = 0; i < m_cacheline_num; i++) { m_empty_indexes.insert(i); }
 }
