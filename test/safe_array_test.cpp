@@ -10,15 +10,9 @@ TEST(SafeArrayTest, Constructor_Valid)
     const std::size_t N = 100;
     safe_array<int> as(B, N);
     ASSERT_EQ(reinterpret_cast<uintptr_t>(&as[0]) % B, 0);
-}
-TEST(SafeArrayTest, Constructor_Invalid)
-{
-    ASSERT_DEATH({
-        const std::size_t B = 6;
-        const std::size_t N = 100;
-        safe_array<int> dcache(B, N);
-    },
-                 "Assertion.*failed");
+    for (std::size_t i = 0; i < N; i++) { ASSERT_EQ(as[i], 0); }
+    safe_array<int> bs(B, N, 100);
+    for (std::size_t i = 0; i < N; i++) { ASSERT_EQ(bs[i], 100); }
 }
 TEST(SafeArrayTest, RandomAccess)
 {
