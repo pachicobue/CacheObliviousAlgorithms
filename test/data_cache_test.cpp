@@ -82,13 +82,13 @@ TEST(DataCacheTest, Write_Sequential)
         const auto data = dcache.disk_read<Data>(reinterpret_cast<uintptr_t>(&dests[index]));
         ASSERT_EQ(datas[index], data);
     }
-    dcache.flush();
     for (std::size_t t = 0; t < T; t++) {
         const std::size_t index = t % N;
         const auto data         = dcache.disk_read<Data>(reinterpret_cast<uintptr_t>(&dests[index]));
         ASSERT_EQ(datas[index], data);
         ASSERT_EQ(datas[index], dests[index]);
     }
+    dcache.flush();
 }
 
 TEST(DataCacheTest, Write_Random)
@@ -105,13 +105,13 @@ TEST(DataCacheTest, Write_Random)
         const std::size_t index = rng.val<std::size_t>(0, N - 1);
         dcache.disk_write(reinterpret_cast<uintptr_t>(&dests[index]), datas[index]);
     }
-    dcache.flush();
     for (std::size_t t = 0; t < T; t++) {
         const std::size_t index = rng.val<std::size_t>(0, N - 1);
         const auto data         = dcache.disk_read<Data>(reinterpret_cast<uintptr_t>(&dests[index]));
         ASSERT_EQ(datas[index], data);
         ASSERT_EQ(datas[index], dests[index]);
     }
+    dcache.flush();
 }
 
 TEST(DataCacheTest, ReadWrite)

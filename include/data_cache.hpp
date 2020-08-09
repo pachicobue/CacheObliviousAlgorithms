@@ -15,17 +15,22 @@
  * - Fully Assiciative
  * - Replacement PolicyはLRU
  * @note
- * uintptr_t型はディスクのアドレスで、T型はキャッシュ(メモリ)にコピーしたデータという気持ち
- * uintptr_tの実態はメモリ上のアドレスなので、*addrのようにアクセスできるが、ルール違反。
- * T data = disk_read<T>(addr)で読み込んだT型の情報を利用する。
- * 木構造の場合などはdataのメンバに子アドレスを含む場合があるが、この子に直接アクセスすることも禁止。読み込む。
+ * [1] uintptr_t型はディスクのアドレスで、T型はキャッシュ(メモリ)にコピーしたデータという気持ち
+ *     uintptr_tの実態はメモリ上のアドレスなので、*addrのようにアクセスできるが、ルール違反
+ *     T data = disk_read<T>(addr)で読み込んだT型の情報を利用する。
+ *     木構造の場合などはdataのメンバに子アドレスを含む場合があるが、この子に直接アクセスすることも禁止
  *
- * disk_readは単純にbyte列をコピーするので、何も考えないとstd::vectorなどの場合double freeが起きうる
- * メンバ内にデータを持たず、データ配列へのポインタのみをメンバに持つため、データ配列のコピーがされないことが原因
- * 余計なデータ型変数を作らないようにし、Tのデストラクタが呼ばれないように注意している
- * (ex) [0x1000, 0x1001,...,]：データ
- *      {0x1000} -> {0x1000} Readでポインタを複製(dataは複製されない)
- *      std::vectorのような自動でdeleteする構造体だと、0x1000からの同一データを二回freeしてしまう。
+ * [2] disk_readは単純にbyte列をコピーするので、何も考えないとstd::vectorなどの場合double freeが起きうる
+ *     メンバ内にデータを持たず、データ配列へのポインタのみをメンバに持つため、データ配列のコピーがされないことが原因
+ *     余計なデータ型変数を作らないようにし、Tのデストラクタが呼ばれないように注意している
+ *     (ex) [0x1000, 0x1001,...,]：データ
+ *          {0x1000} -> {0x1000} Readでポインタを複製(dataは複製されない)
+ *          std::vectorのような自動でdeleteする構造体だと、0x1000からの同一データを二回freeしてしまう
+ *
+ * [3] 多分Cache Obliviousの設定ではwrite-back方式かwrite-through方式かは定義されていない(disk_read_countだけを考慮？)
+ *     disk_write_countがdisk_read_countに対して大きくなるのが嫌だったのでwrite-back方式にしたかった
+ *     しかし一時変数へのdisk_writeを考えると、反映されるタイミングでその対象領域が解放されている恐れがあり、難しい
+ *     そこで実際の更新は即時で反映させ、disk_writeだけ追い出し時にカウントするようないかさまをしている
  */
 template<std::size_t B, std::size_t M>
 class data_cache
@@ -39,14 +44,7 @@ public:
         static_assert(B > 0, "B(page size) should be positive.");
         static_assert(M % B == 0, "M(cache size) should be multiple of B.");
         for (std::size_t i = 0; i < CacheLineNum; i++) { m_empty_indexes.insert(i); }
-        // for (std::size_t i = 0; i < CacheLineNum; i++) {
-        //     for (std::size_t j = 0; j < PageSize; j++) { m_data_buffers[i][j] = static_cast<std::byte>(0x00); }
-        // }
     }
-    /**
-     * @brief デストラクタ
-     */
-    ~data_cache() { flush(); }
     /**
      * @brief 値書き込み
      * @param addr[in] 書き込み先のディスクアドレス
@@ -55,6 +53,7 @@ public:
     template<typename T>
     void disk_write(const uintptr_t addr, const T& val)
     {
+        /* [2] T型の一時変数を作らないようにする */
         T* buf = new T{val};
         write(addr, reinterpret_cast<std::byte*>(buf), sizeof(T));
     }
@@ -65,29 +64,10 @@ public:
     template<typename T>
     T disk_read(const uintptr_t addr)
     {
+        /* [2] T型の一時変数を作らないようにする */
         std::byte val[sizeof(T)];
         read(addr, val, sizeof(T));
         return T{*reinterpret_cast<T*>(val)};
-    }
-    /**
-     * @brief Flush操作
-     * @details update状態で残ったページを実際に書きこむ
-     */
-    void flush()
-    {
-        std::vector<page_item> erase;
-        for (const auto& page_item : m_pages_by_addr) {
-            if (page_item.update) { erase.push_back(page_item); }
-        }
-        for (auto& page_item : erase) {
-            m_statistic.disk_write_count++;
-            std::byte* disk_bytes = reinterpret_cast<std::byte*>(page_item.page_addr);
-            for (std::size_t i = 0; i < PageSize; i++) { disk_bytes[i] = m_data_buffers[page_item.cacheline_index][i]; }
-
-            m_pages_by_addr.erase(page_item), m_pages_by_time.erase(page_item);
-            page_item.update = false;
-            m_pages_by_addr.insert(page_item), m_pages_by_time.insert(page_item);
-        }
     }
     /**
      * @brief 統計情報
@@ -124,6 +104,25 @@ public:
             std::cout << "]" << std::endl;
         }
     }
+    /**
+     * @brief Flush
+     * @details 統計情報を見る前に呼ぶ
+     */
+    void flush()
+    {
+        /* [3] diskへの反映はしない */
+        std::vector<page_item> erase;
+        for (const auto& page_item : m_pages_by_addr) {
+            if (page_item.update) { erase.push_back(page_item); }
+        }
+        for (auto& page_item : erase) {
+            m_statistic.disk_write_count++;
+            m_pages_by_addr.erase(page_item), m_pages_by_time.erase(page_item);
+            page_item.update = false;
+            m_pages_by_addr.insert(page_item), m_pages_by_time.insert(page_item);
+        }
+    }
+
     static constexpr std::size_t PageSize     = B;
     static constexpr std::size_t CacheSize    = M;
     static constexpr std::size_t CacheLineNum = M / B;
@@ -137,11 +136,7 @@ private:
         const auto item = *m_pages_by_time.begin();
         m_pages_by_time.erase(m_pages_by_time.begin()), m_pages_by_addr.erase(item);
         m_empty_indexes.insert(item.cacheline_index);
-        if (item.update) {
-            m_statistic.disk_write_count++;
-            std::byte* disk_bytes = reinterpret_cast<std::byte*>(item.page_addr);
-            for (std::size_t i = 0; i < PageSize; i++) { disk_bytes[i] = m_data_buffers[item.cacheline_index][i]; }
-        }
+        if (item.update) { m_statistic.disk_write_count++; }
     }
     void insert_cache(const uintptr_t page_addr, const bool update)
     {
@@ -160,6 +155,7 @@ private:
             const auto item = page_item{m_time++, page_addr, update, index};
             m_pages_by_addr.insert(item), m_pages_by_time.insert(item);
             const std::byte* disk_bytes = reinterpret_cast<const std::byte*>(page_addr);
+            /* [3] disk_write_countだけこのタイミングで反映 */
             for (std::size_t i = 0; i < PageSize; i++) { m_data_buffers[index][i] = disk_bytes[i]; }
         }
         assert(m_pages_by_addr.size() == m_pages_by_time.size());
@@ -176,6 +172,9 @@ private:
                 m_data_buffers[index][cacheline_index] = data[data_index++];
             }
         }
+        /* [3] 即座に反映 */
+        std::byte* disk_data = reinterpret_cast<std::byte*>(addr);
+        for (std::size_t i = 0; i < size; i++) { disk_data[i] = data[i]; }
     }
     void read(const uintptr_t addr, std::byte* buf, const std::size_t size)
     {
