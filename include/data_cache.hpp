@@ -1,5 +1,6 @@
 #pragma once
 #include <cassert>
+#include <cstring>
 #include <map>
 #include <set>
 #include <vector>
@@ -31,8 +32,11 @@
  *     disk_write_countがdisk_read_countに対して大きくなるのが嫌だったのでwrite-back方式にしたかった
  *     しかし一時変数へのdisk_writeを考えると、反映されるタイミングでその対象領域が解放されている恐れがあり、難しい
  *     そこで実際の更新は即時で反映させ、disk_writeだけ追い出し時にカウントするようないかさまをしている
+ *
+ * [4] キャッシュミス回数だけに興味があるケースでは、pageのコピーをサボる。
+ *     テンプレート引数で指定
  */
-template<std::size_t B, std::size_t M>
+template<std::size_t B, std::size_t M, bool Caching = true>
 class data_cache
 {
 public:
@@ -65,7 +69,7 @@ public:
     T disk_read(const uintptr_t addr)
     {
         /* [2] T型の一時変数を作らないようにする */
-        std::byte val[sizeof(T)];
+        std::byte val[sizeof(T)] = {};
         read(addr, val, sizeof(T));
         return T{*reinterpret_cast<T*>(val)};
     }
@@ -82,6 +86,7 @@ public:
         std::cout << "- page size (B): " << PageSize << " byte" << std::endl;
         std::cout << "- cache size(M): " << CacheSize << " byte" << std::endl;
         std::cout << "- cacheline num: " << CacheLineNum << " lines" << std::endl;
+        std::cout << "- data_caching : " << (Caching ? "ON" : "OFF") << std::endl;
         std::cout << "[Statistics]" << std::endl;
         std::cout << "- disk write   : " << m_statistic.disk_write_count << " times" << std::endl;
         std::cout << "- disk read    : " << m_statistic.disk_read_count << " times" << std::endl;
@@ -97,16 +102,18 @@ public:
         std::cout << "- empty lines  : " << m_empty_indexes << std::endl;
         std::cout << "- pages(addr)  : " << m_pages_by_addr << std::endl;
         std::cout << "- pages(time)  : " << m_pages_by_time << std::endl;
-        std::cout << "- data_buffers : " << std::endl;
-        for (std::size_t i = 0; i < CacheLineNum; i++) {
-            std::cout << "                 [";
-            for (std::size_t j = 0; j < PageSize; j++) { std::cout << m_data_buffers[i][j] << ","; }
-            std::cout << "]" << std::endl;
+        if constexpr (Caching) {
+            std::cout << "- data_buffers : " << std::endl;
+            for (std::size_t i = 0; i < CacheLineNum; i++) {
+                std::cout << "                 [";
+                for (std::size_t j = 0; j < PageSize; j++) { std::cout << m_data_buffers[i][j] << ","; }
+                std::cout << "]" << std::endl;
+            }
         }
     }
     /**
      * @brief Flush
-     * @details 統計情報を見る前に呼ぶ
+     * @details 統計情報を見る前に呼ぶとdisk_write_countが正確になる
      */
     void flush()
     {
@@ -122,6 +129,18 @@ public:
             m_pages_by_addr.insert(page_item), m_pages_by_time.insert(page_item);
         }
     }
+    /**
+     * @brief キャッシュを初期化する
+     */
+    void reset()
+    {
+        m_statistic.disk_write_count = 0;
+        m_statistic.disk_read_count  = 0;
+        m_time                       = 0;
+        m_pages_by_time.clear();
+        m_pages_by_addr.clear();
+        for (std::size_t i = 0; i < CacheLineNum; i++) { m_empty_indexes.insert(i); }
+    }
 
     static constexpr std::size_t PageSize     = B;
     static constexpr std::size_t CacheSize    = M;
@@ -136,6 +155,7 @@ private:
         const auto item = *m_pages_by_time.begin();
         m_pages_by_time.erase(m_pages_by_time.begin()), m_pages_by_addr.erase(item);
         m_empty_indexes.insert(item.cacheline_index);
+        /* [3] disk_write_countだけこのタイミングで反映 */
         if (item.update) { m_statistic.disk_write_count++; }
     }
     void insert_cache(const uintptr_t page_addr, const bool update)
@@ -154,22 +174,25 @@ private:
             m_empty_indexes.erase(m_empty_indexes.begin());
             const auto item = page_item{m_time++, page_addr, update, index};
             m_pages_by_addr.insert(item), m_pages_by_time.insert(item);
-            const std::byte* disk_bytes = reinterpret_cast<const std::byte*>(page_addr);
-            /* [3] disk_write_countだけこのタイミングで反映 */
-            for (std::size_t i = 0; i < PageSize; i++) { m_data_buffers[index][i] = disk_bytes[i]; }
+            if constexpr (Caching) {
+                const std::byte* disk_bytes = reinterpret_cast<const std::byte*>(page_addr);
+                for (std::size_t i = 0; i < PageSize; i++) { m_data_buffers[index][i] = disk_bytes[i]; }
+            }
         }
         assert(m_pages_by_addr.size() == m_pages_by_time.size());
     }
     void write(const uintptr_t addr, const std::byte* data, const std::size_t size)
     {
-        const uintptr_t end_addr = addr + static_cast<uintptr_t>(size);
-        std::size_t data_index   = 0;
-        for (uintptr_t page_addr = get_page_addr(addr); page_addr < end_addr; page_addr += PageSize) {
-            insert_cache(page_addr, true);
-            const std::size_t index = find_by_addr(page_addr)->cacheline_index;
-            for (uintptr_t i = std::max(addr, page_addr); i < std::min(end_addr, page_addr + PageSize); i++) {
-                const std::size_t cacheline_index      = static_cast<std::size_t>(i - page_addr);
-                m_data_buffers[index][cacheline_index] = data[data_index++];
+        if constexpr (Caching) {
+            const uintptr_t end_addr = addr + static_cast<uintptr_t>(size);
+            std::size_t data_index   = 0;
+            for (uintptr_t page_addr = get_page_addr(addr); page_addr < end_addr; page_addr += PageSize) {
+                insert_cache(page_addr, true);
+                const std::size_t index = find_by_addr(page_addr)->cacheline_index;
+                for (uintptr_t i = std::max(addr, page_addr); i < std::min(end_addr, page_addr + PageSize); i++) {
+                    const std::size_t cacheline_index      = static_cast<std::size_t>(i - page_addr);
+                    m_data_buffers[index][cacheline_index] = data[data_index++];
+                }
             }
         }
         /* [3] 即座に反映 */
@@ -179,14 +202,19 @@ private:
     void read(const uintptr_t addr, std::byte* buf, const std::size_t size)
     {
         const uintptr_t end_addr = addr + static_cast<uintptr_t>(size);
-        std::size_t buf_index    = 0;
-        for (uintptr_t page_addr = get_page_addr(addr); page_addr < end_addr; page_addr += PageSize) {
-            insert_cache(page_addr, false);
-            const std::size_t index = find_by_addr(page_addr)->cacheline_index;
-            for (uintptr_t i = std::max(addr, page_addr); i < std::min(end_addr, page_addr + PageSize); i++) {
-                const std::size_t cacheline_index = static_cast<std::size_t>(i - page_addr);
-                buf[buf_index++]                  = m_data_buffers[index][cacheline_index];
+        if constexpr (Caching) {
+            std::size_t buf_index = 0;
+            for (uintptr_t page_addr = get_page_addr(addr); page_addr < end_addr; page_addr += PageSize) {
+                insert_cache(page_addr, false);
+                const std::size_t index = find_by_addr(page_addr)->cacheline_index;
+                for (uintptr_t i = std::max(addr, page_addr); i < std::min(end_addr, page_addr + PageSize); i++) {
+                    const std::size_t cacheline_index = static_cast<std::size_t>(i - page_addr);
+                    buf[buf_index++]                  = m_data_buffers[index][cacheline_index];
+                }
             }
+        } else {
+            for (uintptr_t page_addr = get_page_addr(addr); page_addr < end_addr; page_addr += PageSize) { insert_cache(page_addr, false); }
+            memcpy(buf, reinterpret_cast<std::byte*>(addr), size);
         }
     }
 
@@ -196,5 +224,5 @@ private:
     std::set<page_item, page_item::time_comparator_t> m_pages_by_time;
     std::set<page_item, page_item::addr_comparator_t> m_pages_by_addr;
     std::set<std::size_t> m_empty_indexes;
-    std::byte m_data_buffers[CacheLineNum][PageSize];
+    std::byte m_data_buffers[Caching ? CacheLineNum : 0][Caching ? PageSize : 0];
 };
