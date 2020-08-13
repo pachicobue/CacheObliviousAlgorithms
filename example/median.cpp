@@ -10,9 +10,11 @@
 
 namespace {
 using T                 = int;
+constexpr T min         = std::numeric_limits<T>::min();
+constexpr T max         = std::numeric_limits<T>::max();
 constexpr uint64_t seed = 20190810;
-template<std::size_t B, std::size_t M>
-T kth(const safe_array<T, B>& as, const std::size_t K, data_cache<B, M>& dcache)
+template<std::size_t B, std::size_t M, bool Caching>
+T kth(const safe_array<T, B>& as, const std::size_t K, data_cache<B, M, Caching>& dcache)
 {
     const std::size_t N = as.size();
     if (N == 1) { return dcache.template disk_read<T>(reinterpret_cast<uintptr_t>(&as[0])); }
@@ -56,8 +58,8 @@ void Median(const std::size_t N)
 {
     rng_base<std::mt19937> rng(seed);
     safe_array<T, B> as(N);
-    for (std::size_t i = 0; i < N; i++) { as[i] = rng.val<T>(-100, 100); }
-    data_cache<B, M> dcache;
+    for (std::size_t i = 0; i < N; i++) { as[i] = rng.val<T>(min, max); }
+    data_cache<B, M, false> dcache;  // キャッシュミス回数だけ欲しいのでキャッシングはOFF
     const auto med = kth(as, (N - 1) / 2, dcache);
     std::vector<T> vs;
     for (std::size_t i = 0; i < N; i++) { vs.push_back(as[i]); }
@@ -68,7 +70,7 @@ void Median(const std::size_t N)
     const std::size_t QW = dcache.statistic().disk_write_count;
     std::cout << std::setw(8) << N << " "
               << std::setw(8) << B << " "
-              << std::setw(8) << M << " | "
+              << std::setw(8) << M << "   "
               << std::setw(8) << QR << " "
               << std::setw(8) << QW << std::endl;
 }
@@ -81,39 +83,17 @@ int main()
               << (std::string(6, ' ') + "QR") << " "
               << (std::string(6, ' ') + "QW") << std::endl;
     {
-        const std::size_t N     = 16384;
-        constexpr std::size_t M = 8192;
-        Median<1, M>(N);
-        Median<2, M>(N);
-        Median<4, M>(N);
-        Median<8, M>(N);
-        Median<16, M>(N);
-        Median<32, M>(N);
-        Median<64, M>(N);
-        std::cout << std::endl;
-    }
-    {
-        const std::size_t N     = 32768;
-        constexpr std::size_t M = 8192;
-        Median<1, M>(N);
-        Median<2, M>(N);
-        Median<4, M>(N);
-        Median<8, M>(N);
-        Median<16, M>(N);
-        Median<32, M>(N);
-        Median<64, M>(N);
-        std::cout << std::endl;
-    }
-    {
-        const std::size_t N     = 65536;
-        constexpr std::size_t M = 8192;
-        Median<1, M>(N);
-        Median<2, M>(N);
-        Median<4, M>(N);
-        Median<8, M>(N);
-        Median<16, M>(N);
-        Median<32, M>(N);
-        Median<64, M>(N);
+        const std::size_t N     = (1 << 18);
+        constexpr std::size_t M = (1 << 18);
+        Median<(1 << 0), M>(N);
+        Median<(1 << 1), M>(N);
+        Median<(1 << 2), M>(N);
+        Median<(1 << 3), M>(N);
+        Median<(1 << 4), M>(N);
+        Median<(1 << 5), M>(N);
+        Median<(1 << 6), M>(N);
+        Median<(1 << 7), M>(N);
+        Median<(1 << 8), M>(N);
     }
     return 0;
 }
