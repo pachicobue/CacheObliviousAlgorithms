@@ -20,7 +20,8 @@ TEST(BTreeTest, Constructor)
     b_tree<int, K, B, M> btree(vs);
     ASSERT_EQ(btree.PageSize, B);
     ASSERT_EQ(btree.CacheSize, M);
-    ASSERT_EQ(btree.NodeKeyNum, K);
+    ASSERT_EQ(btree.MaxNodeKeyNum, 2 * K - 1);
+    ASSERT_EQ(btree.MinNodeKeyNum, K - 1);
     ASSERT_EQ(btree.statistic().disk_read_count, 0);
     ASSERT_EQ(btree.statistic().disk_write_count, 0);
 }
