@@ -31,7 +31,7 @@ void BTree(const std::size_t N, const std::size_t Q)
             vs[i] = v;
         }
     }
-    b_tree<T, K, B, M, false> btree(vs);  // キャッシュミス回数だけ欲しいのでキャッシングはOFF
+    b_tree<T, K, B, M> btree(vs);
     std::sort(vs.begin(), vs.end());
     for (std::size_t q = 0; q < Q; q++) {
         const T qx            = rng.val<T>(min, max);

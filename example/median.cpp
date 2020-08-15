@@ -13,8 +13,8 @@ using T                 = int;
 constexpr T min         = std::numeric_limits<T>::min();
 constexpr T max         = std::numeric_limits<T>::max();
 constexpr uint64_t seed = 20190810;
-template<std::size_t B, std::size_t M, bool Caching>
-T kth(const safe_array<T, B>& as, const std::size_t K, data_cache<B, M, Caching>& dcache)
+template<std::size_t B, std::size_t M>
+T kth(const safe_array<T, B>& as, const std::size_t K, data_cache<B, M>& dcache)
 {
     const std::size_t N = as.size();
     if (N == 1) { return dcache.template disk_read<T>(reinterpret_cast<uintptr_t>(&as[0])); }
@@ -59,7 +59,7 @@ void Median(const std::size_t N)
     rng_base<std::mt19937> rng(seed);
     safe_array<T, B> as(N);
     for (std::size_t i = 0; i < N; i++) { as[i] = rng.val<T>(min, max); }
-    data_cache<B, M, false> dcache;  // キャッシュミス回数だけ欲しいのでキャッシングはOFF
+    data_cache<B, M> dcache;
     const auto med = kth(as, (N - 1) / 2, dcache);
     std::vector<T> vs;
     for (std::size_t i = 0; i < N; i++) { vs.push_back(as[i]); }

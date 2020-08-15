@@ -14,8 +14,8 @@ using T                 = int;
 constexpr T min         = std::numeric_limits<T>::min();
 constexpr T max         = std::numeric_limits<T>::max();
 constexpr uint64_t seed = 20190810;
-template<std::size_t B, std::size_t M, bool Caching>
-std::pair<bool, T> lower_bound(const safe_array<T, B>& vs, const T& x, data_cache<B, M, Caching>& dcache)
+template<std::size_t B, std::size_t M>
+std::pair<bool, T> lower_bound(const safe_array<T, B>& vs, const T& x, data_cache<B, M>& dcache)
 {
     const std::size_t N = vs.size();
     int inf = -1, sup = N;
@@ -50,7 +50,7 @@ void BinSearch(const std::size_t N, const std::size_t Q)
             vs[i] = v;
         }
     }
-    data_cache<B, M, false> dcache;  // キャッシュミス回数だけ欲しいのでキャッシングはOFF
+    data_cache<B, M> dcache;
     std::sort(vs.begin(), vs.end());
     safe_array<T, B> svs(N);
     for (std::size_t i = 0; i < N; i++) { svs[i] = vs[i]; }

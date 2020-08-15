@@ -11,8 +11,7 @@ struct Data
     int a                = 0;
     double b             = 0;
     unsigned long long c = 0;
-    std::vector<int> d{};
-    friend bool operator==(const Data& data1, const Data& data2) { return data1.a == data2.a and data1.b == data2.b and data1.c == data2.c and data1.d == data2.d; }
+    friend bool operator==(const Data& data1, const Data& data2) { return data1.a == data2.a and data1.b == data2.b and data1.c == data2.c; }
 };
 Data randomData()
 {
@@ -21,8 +20,6 @@ Data randomData()
     data.a = rng.val<int>(-10, 10);
     data.b = static_cast<double>(rng.val<int>(0, 100)) / 100;
     data.c = rng.val<unsigned long long>(0, 1ULL << 60);
-    data.d = std::vector<int>(rng.val<int>(1, 3));
-    for (auto& e : data.d) { e = rng.val<int>(-10, 10); }
     return data;
 }
 }  // anonymous namespace
@@ -177,7 +174,7 @@ TEST(DataCacheTest, Reset)
         const std::size_t type  = rng.val<std::size_t>(0, 1);
         const std::size_t index = rng.val<std::size_t>(0, N - 1);
         if (type == 0) {
-            const auto data = dcache.disk_read<Data>(reinterpret_cast<uintptr_t>(&datas[index]));
+            dcache.disk_read<Data>(reinterpret_cast<uintptr_t>(&datas[index]));
         } else {
             const auto data = randomData();
             dcache.disk_write(reinterpret_cast<uintptr_t>(&datas[index]), data);

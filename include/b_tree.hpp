@@ -1,6 +1,4 @@
 #pragma once
-#include <random>
-
 #include "data_cache.hpp"
 #include "safe_array.hpp"
 /**
@@ -17,7 +15,7 @@
  * - keysは昇順
  * - sons[i]に含まれるキーの値はkeys[i-1]とkeys[i]の間の値となっている
  */
-template<typename Key, std::size_t K, std::size_t B, std::size_t M, bool Caching = true>
+template<typename Key, std::size_t K, std::size_t B, std::size_t M>
 class b_tree
 {
     using key_t = Key;
@@ -42,7 +40,6 @@ public:
         m_root = alloc();
         std::sort(keys.begin(), keys.end());
         keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
-        std::shuffle(keys.begin(), keys.end(), std::mt19937{std::random_device{}()});
         for (const auto key : keys) { insert(key); }
         m_cache.reset();
     }
@@ -261,6 +258,6 @@ private:
         }
     }
     safe_array<node_t, B> m_nodes;
-    data_cache<B, M, Caching> m_cache;
+    data_cache<B, M> m_cache;
     std::size_t m_root;
 };

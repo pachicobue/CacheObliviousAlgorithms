@@ -20,7 +20,7 @@ void Summation(const std::size_t N)
     rng_base<std::mt19937> rng(seed);
     safe_array<T, B> as(N);
     for (std::size_t i = 0; i < N; i++) { as[i] = rng.val<T>(min, max); }
-    data_cache<B, M, false> dcache;  // キャッシュミス回数だけ欲しいのでキャッシングはOFF
+    data_cache<B, M> dcache;
     long long S = 0;
     for (std::size_t i = 0; i < N; i++) { S += dcache.template disk_read<T>(reinterpret_cast<uintptr_t>(&as[i])); }
     long long actual = 0;
