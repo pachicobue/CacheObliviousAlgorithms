@@ -1,21 +1,17 @@
 #pragma once
-#include "b_tree_node.hpp"
+#include <random>
+
 #include "data_cache.hpp"
-#include "output_utility.hpp"
 #include "safe_array.hpp"
 /**
  * @brief 静的B-木
  * @details 
- * CacheAwareな探索木
- * LowerBoundのみをサポートし、Insert/Eraseなどは(構築時に利用はするが)サポートしない
+ * CacheAwareな探索木(LowerBound/Insert クエリ)
+ * Eraseはまだサポート外
  *
  * 各ノードは以下のフィールドを持つ
  * - keys   ：2K-1個のキー領域(K-1以上が有効なキー)
  * - sons   ：2K個の子ノード領域(＋以下の情報を表現)
- * - size   ：有効なキーの個数(K-1以上2K-1以下)
- *            陽には持たず、sonsの先頭 size+1 個を非NULLに設定することで表現
- * - is_leaf：葉であるかどうか
- *            陽には持たず、葉の場合はsonsの先頭 size+1 個を自分自身のアドレスに設定することで表現
  *
  * また探索木としての性質として以下が成立している
  * - keysは昇順
@@ -24,33 +20,31 @@
 template<typename Key, std::size_t K, std::size_t B, std::size_t M, bool Caching = true>
 class b_tree
 {
-    using key_t  = Key;
-    using node_t = b_tree_node_t<Key, K>;
+    using key_t = Key;
+    struct node_t
+    {
+        key_t keys[2 * K - 1];
+        std::size_t sons[2 * K];
+        static constexpr std::size_t nullind = 0xFFFFFFFF;
+    };
 
 public:
     /**
      * @brief コンストラクタ
      */
-    b_tree(const std::vector<key_t>& keys) : m_cache{}
+    b_tree() : m_cache{} { m_root = alloc(); }
+    /**
+     * @brief コンストラクタ
+     * @param keys[in] キー集合
+     */
+    b_tree(std::vector<key_t> keys) : m_cache{}
     {
-        static_assert(K > 1, "K is should be more than 1");
-        std::vector<node_t> nodes;
-        const std::size_t ri = b_tree_node_t<Key, K>::build(keys, nodes);
-        const std::size_t N  = nodes.size();
-        m_nodes              = safe_array<node_t, B>(N);
-        for (std::size_t i = 0; i < N; i++) {
-            for (std::size_t j = 0; j < MaxNodeKeyNum; j++) { m_nodes[i].keys[j] = nodes[i].keys[j]; }
-            for (std::size_t j = 0; j <= MaxNodeKeyNum; j++) {
-                const node_t* son = reinterpret_cast<node_t*>(nodes[i].sons[j]);
-                if (son == nullptr) {
-                    m_nodes[i].sons[j] = nodes[i].sons[j];
-                } else {
-                    const std::size_t ind = son - (&nodes[0]);
-                    m_nodes[i].sons[j]    = reinterpret_cast<uintptr_t>(&m_nodes[ind]);
-                }
-            }
-        }
-        m_root = reinterpret_cast<uintptr_t>(&m_nodes[ri]);
+        m_root = alloc();
+        std::sort(keys.begin(), keys.end());
+        keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
+        std::shuffle(keys.begin(), keys.end(), std::mt19937{std::random_device{}()});
+        for (const auto key : keys) { insert(key); }
+        m_cache.reset();
     }
     /**
      * @brief 指定値以上の最小のKey
@@ -63,6 +57,25 @@ public:
         lower_bound(m_root, key, max);
         max.first = not max.first;
         return max;
+    }
+    /**
+     * @brief 指定値を挿入
+     * @param key[in] キー
+     * @details キーに重複は許さない
+     */
+    void insert(const key_t key)
+    {
+        if (size_of(m_root) == 2 * K - 1) {
+            const std::size_t nri = alloc();
+            node_t nr_node        = m_cache.template disk_read<node_t>(reinterpret_cast<uintptr_t>(&m_nodes[nri]));
+            nr_node.sons[0]       = m_root;
+            m_root                = nri;
+            m_cache.disk_write(reinterpret_cast<uintptr_t>(&m_nodes[m_root]), nr_node);
+            split_child(nri, 0);
+            insert_non_full(nri, key);
+        } else {
+            insert_non_full(m_root, key);
+        }
     }
     /**
      * @brief ノード数
@@ -96,11 +109,9 @@ public:
         std::cout << "- max node size    : " << NodeSize << " byte" << std::endl;
         std::cout << "- node num         : " << m_nodes.size() << std::endl;
         std::cout << "[Internal Status]" << std::endl;
-        std::cout << "- nodes            : " << m_nodes << std::endl;
-        std::cout << "- root             : " << hex_str(m_root) << std::endl;
+        std::cout << "- root             : " << m_root << std::endl;
         std::cout << "- tree             : " << std::endl;
-        std::cout << "                     ";
-        print_tree(m_root);
+        print_subtree(m_root);
         std::cout << std::endl;
     }
 
@@ -111,45 +122,145 @@ public:
     static constexpr std::size_t NodeSize      = sizeof(node_t);
 
 private:
-    void lower_bound(const uintptr_t addr, const key_t key, std::pair<bool, key_t>& min)
+    std::size_t alloc()
     {
-        if (addr == reinterpret_cast<uintptr_t>(nullptr)) { return; }
-        node_t node = m_cache.template disk_read<node_t>(addr);
-        for (std::size_t i = 0; i < MaxNodeKeyNum; i++) {
-            if (node.sons[i + 1] == reinterpret_cast<uintptr_t>(nullptr)) { break; }
+        node_t node;
+        for (std::size_t i = 0; i < 2 * K; i++) { node.sons[i] = node_t::nullind; }
+        node.sons[0] = m_nodes.size();
+        m_nodes.push_back(node);
+        m_cache.disk_write(reinterpret_cast<uintptr_t>(&m_nodes[m_nodes.size() - 1]), node);
+        return m_nodes.size() - 1;
+    }
+    bool is_leaf(const std::size_t index)
+    {
+        const node_t node = m_cache.template disk_read<node_t>(reinterpret_cast<uintptr_t>(&m_nodes[index]));
+        return node.sons[0] == index;
+    }
+    std::size_t size_of(const std::size_t index)
+    {
+        const node_t node = m_cache.template disk_read<node_t>(reinterpret_cast<uintptr_t>(&m_nodes[index]));
+        std::size_t ans   = 0;
+        for (; ans < 2 * K; ans++) {
+            if (node.sons[ans] == node_t::nullind) { break; }
+        }
+        return ans - 1;
+    }
+    bool is_leaf(const std::size_t index) const { return m_nodes[index].sons[0] == index; }
+    std::size_t size_of(const std::size_t index) const
+    {
+        std::size_t ans = 0;
+        for (; ans < 2 * K; ans++) {
+            if (m_nodes[index].sons[ans] == node_t::nullind) { break; }
+        }
+        return ans - 1;
+    }
+    void split_child(std::size_t xi, const std::size_t ci)
+    {
+        const std::size_t xn = size_of(xi);
+        const std::size_t zi = alloc();
+        node_t x_node        = m_cache.template disk_read<node_t>(reinterpret_cast<uintptr_t>(&m_nodes[xi]));
+        const std::size_t yi = x_node.sons[ci];
+        node_t y_node        = m_cache.template disk_read<node_t>(reinterpret_cast<uintptr_t>(&m_nodes[yi]));
+        node_t z_node        = m_cache.template disk_read<node_t>(reinterpret_cast<uintptr_t>(&m_nodes[zi]));
+        for (std::size_t i = 0; i < K - 1; i++) { z_node.keys[i] = y_node.keys[i + K]; }
+        for (std::size_t i = 0; i < K; i++) { z_node.sons[i] = is_leaf(yi) ? zi : y_node.sons[i + K]; }
+        for (std::size_t i = K; i < 2 * K; i++) { y_node.sons[i] = node_t::nullind; }
+        for (std::size_t i = xn; i >= ci + 1; i--) { x_node.sons[i + 1] = x_node.sons[i]; }
+        x_node.sons[ci + 1] = zi;
+        for (int i = (int)xn - 1; i >= (int)ci; i--) { x_node.keys[i + 1] = x_node.keys[i]; }
+        x_node.keys[ci] = y_node.keys[K - 1];
+        m_cache.disk_write(reinterpret_cast<uintptr_t>(&m_nodes[xi]), x_node);
+        m_cache.disk_write(reinterpret_cast<uintptr_t>(&m_nodes[yi]), y_node);
+        m_cache.disk_write(reinterpret_cast<uintptr_t>(&m_nodes[zi]), z_node);
+    };
+    void insert_non_full(const std::size_t xi, const Key key)
+    {
+        const std::size_t xn = size_of(xi);
+        node_t x_node        = m_cache.template disk_read<node_t>(reinterpret_cast<uintptr_t>(&m_nodes[xi]));
+        if (is_leaf(xi)) {
+            std::size_t i = 0;
+            for (; i < xn; i++) {
+                if (key < x_node.keys[i]) { break; }
+            }
+            for (int j = (int)xn - 1; j >= (int)i; j--) { x_node.keys[j + 1] = x_node.keys[j]; }
+            for (std::size_t j = xn; j >= i + 1; j--) { x_node.sons[j + 1] = x_node.sons[j]; }
+            x_node.keys[i]     = key;
+            x_node.sons[i + 1] = xi;
+            m_cache.disk_write(reinterpret_cast<uintptr_t>(&m_nodes[xi]), x_node);
+        } else {
+            std::size_t i = 0;
+            for (; i < xn; i++) {
+                if (key < x_node.keys[i]) { break; }
+            }
+            const std::size_t yi = x_node.sons[i];
+            if (size_of(yi) == 2 * K - 1) {
+                split_child(xi, i);
+                x_node = m_cache.template disk_read<node_t>(reinterpret_cast<uintptr_t>(&m_nodes[xi]));
+                if (key > x_node.keys[i]) { i++; }
+            }
+            insert_non_full(x_node.sons[i], key);
+        }
+    }
+    void lower_bound(const std::size_t ind, const key_t key, std::pair<bool, key_t>& min)
+    {
+        const std::size_t sz = size_of(ind);
+        const node_t node    = m_cache.template disk_read<node_t>(reinterpret_cast<uintptr_t>(&m_nodes[ind]));
+        for (std::size_t i = 0; i < sz; i++) {
             if (node.keys[i] >= key) {
                 min = std::min(min, {false, node.keys[i]});
                 if (node.keys[i] == key) { return; }
             }
         }
-        if (node.sons[0] != addr) {
+        if (not is_leaf(ind)) {
             std::size_t i = 0;
-            for (; i < MaxNodeKeyNum; i++) {
-                if (node.sons[i + 1] == reinterpret_cast<uintptr_t>(nullptr)) { break; }
+            for (; i < sz; i++) {
                 if (node.keys[i] > key) { break; }
             }
             lower_bound(node.sons[i], key, min);
         }
     }
-    static void print_tree(const uintptr_t addr)
+    key_t min(std::size_t index) const { return is_leaf(index) ? m_nodes[index].keys[0] : min(m_nodes[index].sons[0]); }
+    key_t max(std::size_t index) const
     {
-        if (addr == reinterpret_cast<uintptr_t>(nullptr)) {
-            std::cout << "()";
-            return;
+        const std::size_t sz = size_of(index);
+        return is_leaf(index) ? m_nodes[index].keys[sz - 1] : min(m_nodes[index].sons[sz]);
+    }
+    bool check(std::size_t index) const
+    {
+        const std::size_t sz = size_of(index);
+        if (index != m_root and (sz < K - 1 or 2 * K - 1 < sz)) { return false; }
+
+        for (std::size_t i = 0; i + 1 < sz; i++) {
+            if (m_nodes[index].keys[i] >= m_nodes[index].keys[i + 1]) { return false; }
         }
-        const node_t* p = reinterpret_cast<const node_t*>(addr);
-        std::cout << "([";
-        for (std::size_t i = 0; i < MaxNodeKeyNum; i++) {
-            if (p->sons[i + 1] == reinterpret_cast<uintptr_t>(nullptr)) { break; }
-            std::cout << p->keys[i] << ",";
+        if (not is_leaf(index)) {
+            for (std::size_t i = 0; i < sz; i++) {
+                if (max(m_nodes[index].sons[i]) >= m_nodes[index].keys[i]) { return false; }
+                if (min(m_nodes[index].sons[i + 1]) <= m_nodes[index].keys[i]) { return false; }
+            }
+            for (std::size_t i = 0; i <= sz; i++) {
+                if (not check(m_nodes[index].sons[i])) { return false; }
+            }
         }
-        std::cout << "]:";
-        if (p->sons[0] != addr) {
-            for (std::size_t i = 0; i <= MaxNodeKeyNum; i++) { print_tree(p->sons[i]); }
+        return true;
+    }
+    void print_subtree(std::size_t index) const
+    {
+        const std::size_t sz = size_of(index);
+        std::cout << "                     [" << index << "]: keys=[";
+        for (std::size_t i = 0; i < sz; i++) { std::cout << m_nodes[index].keys[i] << ","; }
+        std::cout << "]";
+        if (not is_leaf(index)) {
+            std::cout << ", sons=[";
+            for (std::size_t i = 0; i <= sz; i++) { std::cout << m_nodes[index].sons[i] << ","; }
+            std::cout << "]";
         }
-        std::cout << ")";
+        std::cout << std::endl;
+        if (not is_leaf(index)) {
+            for (std::size_t i = 0; i <= sz; i++) { print_subtree(m_nodes[index].sons[i]); }
+        }
     }
     safe_array<node_t, B> m_nodes;
     data_cache<B, M, Caching> m_cache;
-    uintptr_t m_root = reinterpret_cast<uintptr_t>(nullptr);
+    std::size_t m_root;
 };
