@@ -13,8 +13,8 @@ class safe_array
 {
 public:
     using data_type = Data;
-    safe_array() {}
-    safe_array(const std::size_t N, const Data& init = data_type{}) : sz{N}, buffer(sz + Margin * 2, init) { buffer.shrink_to_fit(); }
+    safe_array() : sz{0}, buffer(Margin * 2) {}
+    safe_array(const std::size_t N, const Data& init = data_type{}) : sz{N}, buffer(sz + Margin * 2, init) {}
     safe_array(const std::vector<Data>& vs) : sz{vs.size()}, buffer(sz + Margin * 2)
     {
         for (std::size_t i = 0; i < sz; i++) { buffer[i + Margin] = vs[i]; }
