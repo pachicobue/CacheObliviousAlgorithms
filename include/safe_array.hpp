@@ -15,10 +15,7 @@ public:
     using data_type = Data;
     safe_array() : sz{0}, buffer(Margin * 2) {}
     safe_array(const std::size_t N, const Data& init = data_type{}) : sz{N}, buffer(sz + Margin * 2, init) {}
-    safe_array(const std::vector<Data>& vs) : sz{vs.size()}, buffer(sz + Margin * 2)
-    {
-        for (std::size_t i = 0; i < sz; i++) { buffer[i + Margin] = vs[i]; }
-    }
+    safe_array(const std::vector<Data>& vs) : sz{vs.size()}, buffer(sz + Margin * 2) { std::copy(vs.begin(), vs.end(), buffer.begin() + Margin); }
     Data& operator[](const std::size_t i) { return assert(i < sz), buffer[i + Margin]; }
     const Data& operator[](const std::size_t i) const { return assert(i < sz), buffer[i + Margin]; }
     void push_back(const Data& data)
