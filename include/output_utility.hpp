@@ -5,6 +5,17 @@
 #include <set>
 #include <vector>
 
+namespace impl_do_not_touch {
+inline void dump() { ; }
+template<typename T>
+inline void dump(T x) { std::cerr << x; }
+template<typename T, typename... Args>
+inline void dump(T x, Args... args) { std::cerr << x << ",", dump(args...); }
+}  // namespace impl_do_not_touch
+#define Debug(...) (std::cerr << "LINE " << __LINE__ << ": "      \
+                              << "(" << #__VA_ARGS__ << ") = ("), \
+                   impl_do_not_touch::dump(__VA_ARGS__), std::cerr << ")" << std::endl
+
 template<typename T, typename A>
 inline std::ostream& operator<<(std::ostream& os, const std::vector<T, A>& v)
 {

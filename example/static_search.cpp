@@ -2,37 +2,29 @@
  * @file satatic_search.hpp
  * @brief 静的データの探索
  */
+#include <cassert>
 #include <numeric>
 
 #include "bit_utility.hpp"
+#include "config.hpp"
 #include "data_cache.hpp"
 #include "rng_utility.hpp"
-#include "safe_array.hpp"
-namespace {
-using T                 = int;
-constexpr T min         = std::numeric_limits<T>::min() / 4;
-constexpr T max         = std::numeric_limits<T>::max() / 4;
-constexpr uint64_t seed = 20190810;
 
-struct node_impl_t
-{
-    T val{};
-    std::size_t left = static_cast<std::size_t>(-1), right = static_cast<std::size_t>(-1);
-};
+namespace {
+
 struct node_t
 {
-    node_impl_t node;
-    std::byte reserved[ceil2(sizeof(node_impl_t)) - sizeof(node_impl_t)];
+    data_t val{};
+    std::size_t left = static_cast<std::size_t>(-1), right = static_cast<std::size_t>(-1);
 };
+
 inline std::size_t left(const std::size_t N)
 {
-    assert((N & 1UL) == 0UL);
     const std::size_t i = lsb(N) - 1;
     return N - (1UL << i);
 }
 inline std::size_t right(const std::size_t N)
 {
-    assert((N & 1UL) == 0UL);
     const std::size_t i = lsb(N) - 1;
     return N + (1UL << i);
 }
@@ -91,11 +83,11 @@ std::vector<std::size_t> vEB_layout(const std::size_t R)
     return ans;
 }
 
-template<std::size_t B, std::size_t M, typename F>
-inline uint64_t static_search(const std::size_t N, const std::size_t Q, F layout_func)
+template<typename F>
+statistic_info static_search(const std::size_t B, const std::size_t M, const std::size_t N, const std::size_t T, F layout_func)
 {
-    rng_base<std::mt19937> rng(seed);
-    auto vs = rng.vec<T>(N, min, max);
+    rng_base<std::mt19937> rng(Seed);
+    auto vs = rng.vec<data_t>(N, Min, Max);
     std::sort(vs.begin(), vs.end());
     std::size_t NN = 1;
     for (; NN < N; NN = NN * 2 + 1) {}
@@ -103,146 +95,136 @@ inline uint64_t static_search(const std::size_t N, const std::size_t Q, F layout
     const auto layout   = layout_func(R);
     std::vector<std::size_t> poss(NN + 1);
     for (std::size_t i = 0; i < NN; i++) { poss[layout[i]] = i; }
-    safe_array<node_t, B> nodes(NN);
+    std::vector<node_t> nodes(NN);
     for (std::size_t i = 0; i < NN; i++) {
-        nodes[i].node.val = layout[i] > N ? max + 1 : vs[layout[i] - 1];
-        if ((layout[i] & 1UL) == 0) { nodes[i].node.left = poss[left(layout[i])], nodes[i].node.right = poss[right(layout[i])]; }
+        nodes[i].val = layout[i] > N ? Max + 1 : vs[layout[i] - 1];
+        if ((layout[i] & 1UL) == 0) { nodes[i].left = poss[left(layout[i])], nodes[i].right = poss[right(layout[i])]; }
     }
-    data_cache<B, M> dcache;
-    auto lower_bound = [&](const T& x) -> T {
-        T ans = max + 1;
+    auto lower_bound = [&](data_cache& dcache, const data_t& x) -> data_t {
+        data_t ans = Max + 1;
         for (std::size_t ind = poss[R]; ind != static_cast<std::size_t>(-1);) {
             const node_t node = dcache.template disk_read<node_t>(reinterpret_cast<uintptr_t>(&nodes[ind]));
-            if (node.node.val == x) { return x; }
-            if (node.node.val < x) {
-                ind = node.node.right;
+            if (node.val == x) { return x; }
+            if (node.val < x) {
+                ind = node.right;
             } else {
-                ans = std::min(ans, node.node.val);
-                ind = node.node.left;
+                ans = std::min(ans, node.val);
+                ind = node.left;
             }
         }
         return ans;
     };
-    vs.push_back(max + 1);
-    uint64_t QR = 0;
-    for (std::size_t q = 0; q < Q; q++) {
-        const T qx     = rng.val<T>(min, max);
-        const T actual = *std::lower_bound(vs.begin(), vs.end(), qx);
-        const T ans    = lower_bound(qx);
+    vs.push_back(Max + 1);
+
+    statistic_info info;
+    for (std::size_t t = 0; t < T; t++) {
+        data_cache dcache(B, M);
+        const data_t qx     = rng.val<data_t>(Min, Max);
+        const data_t actual = *std::lower_bound(vs.begin(), vs.end(), qx);
+        const data_t ans    = lower_bound(dcache, qx);
         assert(actual == ans);
         dcache.flush();
-        QR += dcache.statistic().disk_read_count;
-        dcache.reset();
+        const auto [QR, QW] = dcache.statistic();
+        info.disk_read_count += QR;
+        info.disk_write_count += QW;
     }
-    return QR;
+    return info;
 }
 }  // namespace
 
-template<std::size_t B, std::size_t M>
-inline void InOrderLayout(std::size_t N, const std::size_t Q)
+statistic_info InOrderLayout(const std::size_t B, const std::size_t M, const std::size_t N, const std::size_t T)
 {
-    const uint64_t QR = static_search<B, M>(N, Q, in_order_layout);
-    std::cout << std::setw(10) << B << " "
-              << std::setw(10) << M << " "
-              << std::setw(10) << sizeof(node_t) << " "
-              << std::setw(10) << N << " "
-              << std::setw(12) << Q << "   "
-              << std::setw(10) << QR << std::endl;
+    return static_search(B, M, N, T, in_order_layout);
 }
 
-template<std::size_t B, std::size_t M, std::size_t H>
-inline void BlockLayout(std::size_t N, const std::size_t Q)
+statistic_info BlockLayout(const std::size_t B, const std::size_t M, const std::size_t H, std::size_t N, const std::size_t T)
 {
-    const uint64_t QR = static_search<B, M>(N, Q, [&](const std::size_t R) { return block_layout(R, H); });
-    std::cout << std::setw(10) << B << " "
-              << std::setw(10) << M << " "
-              << std::setw(10) << sizeof(node_t) << " "
-              << std::setw(10) << H << " "
-              << std::setw(10) << sizeof(node_t) * ((1UL << H) - 1) << " "
-              << std::setw(10) << N << " "
-              << std::setw(12) << Q << "   "
-              << std::setw(10) << QR << std::endl;
+    return static_search(B, M, N, T, [&](const std::size_t R) { return block_layout(R, H); });
 }
 
-template<std::size_t B, std::size_t M>
-inline void vEB_Layout(std::size_t N, const std::size_t Q)
+statistic_info vEB_Layout(const std::size_t B, const std::size_t M, const std::size_t N, const std::size_t T)
 {
-    const uint64_t QR = static_search<B, M>(N, Q, vEB_layout);
-    std::cout << std::setw(10) << B << " "
-              << std::setw(10) << M << " "
-              << std::setw(10) << sizeof(node_t) << " "
-              << std::setw(10) << N << " "
-              << std::setw(12) << Q << "   "
-              << std::setw(10) << QR << std::endl;
+    return static_search(B, M, N, T, vEB_layout);
 }
 
 int main()
 {
     bool flags[]            = {true, true, true};
-    const std::size_t N     = (1 << 20);
-    const std::size_t Q     = (1 << 0);
-    constexpr std::size_t M = (1 << 30);
+    constexpr std::size_t N = (1 << 16);
+    constexpr std::size_t T = (1 << 8);
+    constexpr std::size_t M = (1 << 16);
+    std::cout << "# Static Search Complexity #" << std::endl;
     if (flags[0]) {
-        std::cout << "# InOrder Layout #" << std::endl;
-        std::cout << ("#" + std::string(8, ' ') + "B") << " "
-                  << (std::string(9, ' ') + "M") << " "
-                  << (std::string(8, ' ') + "NS") << " "
-                  << (std::string(9, ' ') + "N") << " "
-                  << (std::string(11, ' ') + "Q") << " | "
-                  << (std::string(8, ' ') + "QR") << std::endl;
-        InOrderLayout<(1 << 6), M>(N, Q);
-        InOrderLayout<(1 << 7), M>(N, Q);
-        InOrderLayout<(1 << 8), M>(N, Q);
-        InOrderLayout<(1 << 9), M>(N, Q);
-        InOrderLayout<(1 << 10), M>(N, Q);
-        InOrderLayout<(1 << 11), M>(N, Q);
-        InOrderLayout<(1 << 12), M>(N, Q);
-        InOrderLayout<(1 << 13), M>(N, Q);
-        InOrderLayout<(1 << 14), M>(N, Q);
-        InOrderLayout<(1 << 15), M>(N, Q);
+        std::cout << "# in-order layout" << std::endl;
+        std::cout << ("#" + std::string(6, ' ') + "B") << " "
+                  << (std::string(7, ' ') + "M") << " "
+                  << (std::string(7, ' ') + "N") << " "
+                  << (std::string(7, ' ') + "T") << " | "
+                  << (std::string(6, ' ') + "QR") << " "
+                  << (std::string(6, ' ') + "QW") << " "
+                  << (std::string(7, ' ') + "Q") << std::endl;
+        for (std::size_t B = 1; B * B <= M; B++) {
+            const auto [QR, QW] = InOrderLayout(B, M, N, T);
+            const auto Q        = QR + QW;
+            std::cout << std::setw(8) << B << " "
+                      << std::setw(8) << M << " "
+                      << std::setw(8) << N << " "
+                      << std::setw(8) << T << "   "
+                      << std::setw(8) << QR << " "
+                      << std::setw(8) << QW << " "
+                      << std::setw(8) << Q << " "
+                      << std::endl;
+        }
         std::cout << std::endl;
     }
     if (flags[1]) {
-        std::cout << "# Block Layout #" << std::endl;
-        std::cout << ("#" + std::string(8, ' ') + "B") << " "
-                  << (std::string(9, ' ') + "M") << " "
-                  << (std::string(8, ' ') + "NS") << " "
-                  << (std::string(9, ' ') + "H") << " "
-                  << (std::string(8, ' ') + "BS") << " "
-                  << (std::string(9, ' ') + "N") << " "
-                  << (std::string(11, ' ') + "Q") << " | "
-                  << (std::string(8, ' ') + "QR") << std::endl;
-        BlockLayout<(1 << 6), M, 1>(N, Q);
-        BlockLayout<(1 << 7), M, 1>(N, Q);
-        BlockLayout<(1 << 8), M, 2>(N, Q);
-        BlockLayout<(1 << 9), M, 3>(N, Q);
-        BlockLayout<(1 << 10), M, 4>(N, Q);
-        BlockLayout<(1 << 11), M, 5>(N, Q);
-        BlockLayout<(1 << 12), M, 6>(N, Q);
-        BlockLayout<(1 << 13), M, 7>(N, Q);
-        BlockLayout<(1 << 14), M, 8>(N, Q);
-        BlockLayout<(1 << 15), M, 9>(N, Q);
+        std::cout << "# block layout" << std::endl;
+        std::cout << ("#" + std::string(6, ' ') + "B") << " "
+                  << (std::string(7, ' ') + "M") << " "
+                  << (std::string(7, ' ') + "H") << " "
+                  << (std::string(7, ' ') + "N") << " "
+                  << (std::string(7, ' ') + "T") << " | "
+                  << (std::string(6, ' ') + "QR") << " "
+                  << (std::string(6, ' ') + "QW") << " "
+                  << (std::string(7, ' ') + "Q") << std::endl;
+        std::size_t H  = 1;
+        std::size_t SZ = sizeof(node_t);
+        for (std::size_t B = 1; B * B <= M; B++) {
+            if (SZ * 2 + 1 <= B) { H++, SZ = SZ * 2 + 1; }
+            const auto [QR, QW] = BlockLayout(B, M, H, N, T);
+            const auto Q        = QR + QW;
+            std::cout << std::setw(8) << B << " "
+                      << std::setw(8) << M << " "
+                      << std::setw(8) << H << " "
+                      << std::setw(8) << N << " "
+                      << std::setw(8) << T << "   "
+                      << std::setw(8) << QR << " "
+                      << std::setw(8) << QW << " "
+                      << std::setw(8) << Q << std::endl;
+        }
         std::cout << std::endl;
     }
     if (flags[2]) {
-        std::cout << "# vEB Layout #" << std::endl;
-        std::cout << ("#" + std::string(8, ' ') + "B") << " "
-                  << (std::string(9, ' ') + "M") << " "
-                  << (std::string(8, ' ') + "NS") << " "
-                  << (std::string(9, ' ') + "N") << " "
-                  << (std::string(11, ' ') + "Q") << " | "
-                  << (std::string(8, ' ') + "QR") << std::endl;
-        vEB_Layout<(1 << 6), M>(N, Q);
-        vEB_Layout<(1 << 7), M>(N, Q);
-        vEB_Layout<(1 << 8), M>(N, Q);
-        vEB_Layout<(1 << 9), M>(N, Q);
-        vEB_Layout<(1 << 10), M>(N, Q);
-        vEB_Layout<(1 << 11), M>(N, Q);
-        vEB_Layout<(1 << 12), M>(N, Q);
-        vEB_Layout<(1 << 13), M>(N, Q);
-        vEB_Layout<(1 << 14), M>(N, Q);
-        vEB_Layout<(1 << 15), M>(N, Q);
-        std::cout << std::endl;
+        std::cout << "# vEB layout" << std::endl;
+        std::cout << ("#" + std::string(6, ' ') + "B") << " "
+                  << (std::string(7, ' ') + "M") << " "
+                  << (std::string(7, ' ') + "N") << " "
+                  << (std::string(7, ' ') + "T") << " | "
+                  << (std::string(6, ' ') + "QR") << " "
+                  << (std::string(6, ' ') + "QW") << " "
+                  << (std::string(7, ' ') + "Q") << std::endl;
+        for (std::size_t B = 1; B * B <= M; B++) {
+            const auto [QR, QW] = vEB_Layout(B, M, N, T);
+            const auto Q        = QR + QW;
+            std::cout << std::setw(8) << B << " "
+                      << std::setw(8) << M << " "
+                      << std::setw(8) << N << " "
+                      << std::setw(8) << T << "   "
+                      << std::setw(8) << QR << " "
+                      << std::setw(8) << QW << " "
+                      << std::setw(8) << Q << " "
+                      << std::endl;
+        }
     }
     return 0;
 }
