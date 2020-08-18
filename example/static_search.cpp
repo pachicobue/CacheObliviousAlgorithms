@@ -4,6 +4,7 @@
  */
 #include <numeric>
 
+#include "bit_utility.hpp"
 #include "data_cache.hpp"
 #include "rng_utility.hpp"
 #include "safe_array.hpp"
@@ -13,13 +14,16 @@ constexpr T min         = std::numeric_limits<T>::min() / 4;
 constexpr T max         = std::numeric_limits<T>::max() / 4;
 constexpr uint64_t seed = 20190810;
 
-struct node_t
+struct node_impl_t
 {
     T val{};
     std::size_t left = static_cast<std::size_t>(-1), right = static_cast<std::size_t>(-1);
 };
-
-inline std::size_t lsb(const std::size_t N) { return __builtin_ffs(N) - 1; }
+struct node_t
+{
+    node_impl_t node;
+    std::byte reserved[ceil2(sizeof(node_impl_t)) - sizeof(node_impl_t)];
+};
 inline std::size_t left(const std::size_t N)
 {
     assert((N & 1UL) == 0UL);
@@ -101,20 +105,20 @@ inline uint64_t static_search(const std::size_t N, const std::size_t Q, F layout
     for (std::size_t i = 0; i < NN; i++) { poss[layout[i]] = i; }
     safe_array<node_t, B> nodes(NN);
     for (std::size_t i = 0; i < NN; i++) {
-        nodes[i].val = layout[i] > N ? max + 1 : vs[layout[i] - 1];
-        if ((layout[i] & 1UL) == 0) { nodes[i].left = poss[left(layout[i])], nodes[i].right = poss[right(layout[i])]; }
+        nodes[i].node.val = layout[i] > N ? max + 1 : vs[layout[i] - 1];
+        if ((layout[i] & 1UL) == 0) { nodes[i].node.left = poss[left(layout[i])], nodes[i].node.right = poss[right(layout[i])]; }
     }
     data_cache<B, M> dcache;
     auto lower_bound = [&](const T& x) -> T {
         T ans = max + 1;
         for (std::size_t ind = poss[R]; ind != static_cast<std::size_t>(-1);) {
             const node_t node = dcache.template disk_read<node_t>(reinterpret_cast<uintptr_t>(&nodes[ind]));
-            if (node.val == x) { return x; }
-            if (node.val < x) {
-                ind = node.right;
+            if (node.node.val == x) { return x; }
+            if (node.node.val < x) {
+                ind = node.node.right;
             } else {
-                ans = std::min(ans, node.val);
-                ind = node.left;
+                ans = std::min(ans, node.node.val);
+                ind = node.node.left;
             }
         }
         return ans;
@@ -140,6 +144,7 @@ inline void InOrderLayout(std::size_t N, const std::size_t Q)
     const uint64_t QR = static_search<B, M>(N, Q, in_order_layout);
     std::cout << std::setw(10) << B << " "
               << std::setw(10) << M << " "
+              << std::setw(10) << sizeof(node_t) << " "
               << std::setw(10) << N << " "
               << std::setw(12) << Q << "   "
               << std::setw(10) << QR << std::endl;
@@ -151,6 +156,7 @@ inline void BlockLayout(std::size_t N, const std::size_t Q)
     const uint64_t QR = static_search<B, M>(N, Q, [&](const std::size_t R) { return block_layout(R, H); });
     std::cout << std::setw(10) << B << " "
               << std::setw(10) << M << " "
+              << std::setw(10) << sizeof(node_t) << " "
               << std::setw(10) << H << " "
               << std::setw(10) << sizeof(node_t) * ((1UL << H) - 1) << " "
               << std::setw(10) << N << " "
@@ -164,6 +170,7 @@ inline void vEB_Layout(std::size_t N, const std::size_t Q)
     const uint64_t QR = static_search<B, M>(N, Q, vEB_layout);
     std::cout << std::setw(10) << B << " "
               << std::setw(10) << M << " "
+              << std::setw(10) << sizeof(node_t) << " "
               << std::setw(10) << N << " "
               << std::setw(12) << Q << "   "
               << std::setw(10) << QR << std::endl;
@@ -179,6 +186,7 @@ int main()
         std::cout << "# InOrder Layout #" << std::endl;
         std::cout << ("#" + std::string(8, ' ') + "B") << " "
                   << (std::string(9, ' ') + "M") << " "
+                  << (std::string(8, ' ') + "NS") << " "
                   << (std::string(9, ' ') + "N") << " "
                   << (std::string(11, ' ') + "Q") << " | "
                   << (std::string(8, ' ') + "QR") << std::endl;
@@ -198,27 +206,29 @@ int main()
         std::cout << "# Block Layout #" << std::endl;
         std::cout << ("#" + std::string(8, ' ') + "B") << " "
                   << (std::string(9, ' ') + "M") << " "
+                  << (std::string(8, ' ') + "NS") << " "
                   << (std::string(9, ' ') + "H") << " "
                   << (std::string(8, ' ') + "BS") << " "
                   << (std::string(9, ' ') + "N") << " "
                   << (std::string(11, ' ') + "Q") << " | "
                   << (std::string(8, ' ') + "QR") << std::endl;
         BlockLayout<(1 << 6), M, 1>(N, Q);
-        BlockLayout<(1 << 7), M, 2>(N, Q);
-        BlockLayout<(1 << 8), M, 3>(N, Q);
-        BlockLayout<(1 << 9), M, 4>(N, Q);
-        BlockLayout<(1 << 10), M, 5>(N, Q);
-        BlockLayout<(1 << 11), M, 6>(N, Q);
-        BlockLayout<(1 << 12), M, 7>(N, Q);
-        BlockLayout<(1 << 13), M, 8>(N, Q);
-        BlockLayout<(1 << 14), M, 9>(N, Q);
-        BlockLayout<(1 << 15), M, 10>(N, Q);
+        BlockLayout<(1 << 7), M, 1>(N, Q);
+        BlockLayout<(1 << 8), M, 2>(N, Q);
+        BlockLayout<(1 << 9), M, 3>(N, Q);
+        BlockLayout<(1 << 10), M, 4>(N, Q);
+        BlockLayout<(1 << 11), M, 5>(N, Q);
+        BlockLayout<(1 << 12), M, 6>(N, Q);
+        BlockLayout<(1 << 13), M, 7>(N, Q);
+        BlockLayout<(1 << 14), M, 8>(N, Q);
+        BlockLayout<(1 << 15), M, 9>(N, Q);
         std::cout << std::endl;
     }
     if (flags[2]) {
         std::cout << "# vEB Layout #" << std::endl;
         std::cout << ("#" + std::string(8, ' ') + "B") << " "
                   << (std::string(9, ' ') + "M") << " "
+                  << (std::string(8, ' ') + "NS") << " "
                   << (std::string(9, ' ') + "N") << " "
                   << (std::string(11, ' ') + "Q") << " | "
                   << (std::string(8, ' ') + "QR") << std::endl;
