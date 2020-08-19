@@ -91,19 +91,31 @@ statistic_info static_search(const std::size_t B, const std::size_t M, const std
     std::sort(vs.begin(), vs.end());
     std::size_t NN = 1;
     for (; NN < N; NN = NN * 2 + 1) {}
-    const std::size_t R = (NN + 1) / 2;
-    const auto layout   = layout_func(R);
+    const std::size_t R   = (NN + 1) / 2;
+    const auto layout_vec = layout_func(R);
+    disk_vector<std::size_t> layout(layout_vec.size());
+    for (std::size_t i = 0; i < layout_vec.size(); i++) {
+        data_cache::disk_write_raw(layout.addr(i), layout_vec[i]);
+    }
     std::vector<std::size_t> poss(NN + 1);
-    for (std::size_t i = 0; i < NN; i++) { poss[layout[i]] = i; }
-    std::vector<node_t> nodes(NN);
     for (std::size_t i = 0; i < NN; i++) {
-        nodes[i].val = layout[i] > N ? Max + 1 : vs[layout[i] - 1];
-        if ((layout[i] & 1UL) == 0) { nodes[i].left = poss[left(layout[i])], nodes[i].right = poss[right(layout[i])]; }
+        poss[data_cache::disk_read_raw<std::size_t>(layout.addr(i))] = i;
+    }
+    disk_vector<node_t> nodes(NN);
+    for (std::size_t i = 0; i < NN; i++) {
+        const std::size_t ord = data_cache::disk_read_raw<std::size_t>(layout.addr(i));
+        node_t node;
+        node.val = ord > N ? Max + 1 : vs[ord - 1];
+        if ((ord & 1UL) == 0) {
+            node.left  = poss[left(ord)];
+            node.right = poss[right(ord)];
+        }
+        data_cache::disk_write_raw(nodes.addr(i), node);
     }
     auto lower_bound = [&](data_cache& dcache, const data_t& x) -> data_t {
         data_t ans = Max + 1;
         for (std::size_t ind = poss[R]; ind != static_cast<std::size_t>(-1);) {
-            const node_t node = dcache.template disk_read<node_t>(reinterpret_cast<uintptr_t>(&nodes[ind]));
+            const node_t node = dcache.template disk_read<node_t>(nodes.addr(ind));
             if (node.val == x) { return x; }
             if (node.val < x) {
                 ind = node.right;
