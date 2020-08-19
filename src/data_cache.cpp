@@ -4,10 +4,7 @@
 #include "data_cache.hpp"
 #include "output_utility.hpp"
 
-data_cache::data_cache(const std::size_t B, const std::size_t M) : PageSize{B}, CacheLineNum{(M + B - 1) / B}, CacheSize{PageSize * CacheLineNum}
-{
-    for (std::size_t i = 0; i < CacheLineNum; i++) { m_empty_indexes.insert(i); }
-}
+data_cache::data_cache(const std::size_t B, const std::size_t M) : PageSize{B}, CacheLineNum{(M + B - 1) / B}, CacheSize{PageSize * CacheLineNum} {}
 
 statistic_info data_cache::statistic() const
 {
@@ -36,7 +33,6 @@ void data_cache::debug_print() const
     std::cout << "- disk read    : " << m_statistic.disk_read_count << " times" << std::endl;
     std::cout << "[Internal Status]" << std::endl;
     std::cout << "- time         : " << m_time << std::endl;
-    std::cout << "- empty lines  : " << m_empty_indexes << std::endl;
     std::cout << "- pages(addr)  : " << m_pages_by_addr << std::endl;
     std::cout << "- pages(time)  : " << m_pages_by_time << std::endl;
 }
@@ -62,7 +58,6 @@ void data_cache::reset()
     m_time                       = 0;
     m_pages_by_time.clear();
     m_pages_by_addr.clear();
-    for (std::size_t i = 0; i < CacheLineNum; i++) { m_empty_indexes.insert(i); }
 }
 
 uintptr_t data_cache::get_page_addr(const uintptr_t addr) const
@@ -72,7 +67,7 @@ uintptr_t data_cache::get_page_addr(const uintptr_t addr) const
 
 std::set<page_item, page_item::addr_comparator_t>::iterator data_cache::find_by_addr(const uintptr_t page_addr) const
 {
-    return m_pages_by_addr.lower_bound(page_item{0, page_addr, false, 0});
+    return m_pages_by_addr.lower_bound(page_item{0, page_addr, false});
 }
 
 void data_cache::delete_LRU()
@@ -80,11 +75,10 @@ void data_cache::delete_LRU()
     assert(m_pages_by_time.size() == CacheLineNum);
     const auto item = *m_pages_by_time.begin();
     m_pages_by_time.erase(m_pages_by_time.begin()), m_pages_by_addr.erase(item);
-    m_empty_indexes.insert(item.cacheline_index);
     if (item.update) { m_statistic.disk_write_count++; }
 }
 
-void data_cache::insert_cache(const uintptr_t page_addr, const bool update)
+void data_cache::insert_page(const uintptr_t page_addr, const bool update)
 {
     const auto it = find_by_addr(page_addr);
     if (it != m_pages_by_addr.end() and it->page_addr == page_addr) {
@@ -96,26 +90,14 @@ void data_cache::insert_cache(const uintptr_t page_addr, const bool update)
     } else {
         if (m_pages_by_time.size() == CacheLineNum) { delete_LRU(); }
         m_statistic.disk_read_count++;
-        const std::size_t index = *m_empty_indexes.begin();
-        m_empty_indexes.erase(m_empty_indexes.begin());
-        const auto item = page_item{m_time++, page_addr, update, index};
+        const auto item = page_item{m_time++, page_addr, update};
         m_pages_by_addr.insert(item), m_pages_by_time.insert(item);
     }
     assert(m_pages_by_addr.size() == m_pages_by_time.size());
 }
 
-void data_cache::write(const uintptr_t addr, const std::byte* data, const std::size_t size)
+void data_cache::insert_address_range(const uintptr_t addr, const std::size_t size, const bool update)
 {
     const uintptr_t end_addr = addr + static_cast<uintptr_t>(size);
-    for (uintptr_t page_addr = get_page_addr(addr); page_addr < end_addr; page_addr += PageSize) { insert_cache(page_addr, true); }
-    std::byte* disk_data = reinterpret_cast<std::byte*>(addr);
-    for (std::size_t i = 0; i < size; i++) { disk_data[i] = data[i]; }
-}
-
-void data_cache::read(const uintptr_t addr, std::byte* buf, const std::size_t size)
-{
-    const uintptr_t end_addr = addr + static_cast<uintptr_t>(size);
-    for (uintptr_t page_addr = get_page_addr(addr); page_addr < end_addr; page_addr += PageSize) { insert_cache(page_addr, false); }
-    std::byte* disk_data = reinterpret_cast<std::byte*>(addr);
-    for (std::size_t i = 0; i < size; i++) { buf[i] = disk_data[i]; }
+    for (uintptr_t page_addr = get_page_addr(addr); page_addr < end_addr; page_addr += PageSize) { insert_page(page_addr, update); }
 }

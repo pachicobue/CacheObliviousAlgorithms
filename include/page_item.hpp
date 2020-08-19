@@ -14,10 +14,9 @@
  */
 struct page_item
 {
-    uint64_t last_used_time           = 0;
-    const uintptr_t page_addr         = 0;
-    bool update                       = false;
-    const std::size_t cacheline_index = 0;
+    uint64_t last_used_time   = 0;
+    const uintptr_t page_addr = 0;
+    bool update               = false;
     struct time_comparator_t
     {
         bool operator()(const page_item& item1, const page_item& item2) const { return item1.last_used_time < item2.last_used_time; }
@@ -26,5 +25,5 @@ struct page_item
     {
         bool operator()(const page_item& item1, const page_item& item2) const { return item1.page_addr < item2.page_addr; }
     };
-    friend std::ostream& operator<<(std::ostream& os, const page_item& item) { return (os << "{time=" << item.last_used_time << ",addr=" << hex_str(item.page_addr) << ",update=" << item.update << ", index=" << item.cacheline_index << "}"); }
+    friend std::ostream& operator<<(std::ostream& os, const page_item& item) { return (os << "{time=" << item.last_used_time << ",addr=" << hex_str(item.page_addr) << ",update=" << item.update << "}"); }
 };

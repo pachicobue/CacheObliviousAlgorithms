@@ -13,6 +13,8 @@
  * - Fully Assiciative
  * - Replacement PolicyはLRU (resource augmentaion theorem によって多くの場合正当化される)
  * @note
+ * - disk_addr_tの中身にアクセスできる唯一のクラス
+ *   disk_addr_t <-> uintptr_t への変換を行って管理
  * - 今回のモデルではキャッシュミス回数だけに興味があるので、キャッシュへのデータのコピーは行わない
  *   メモリリークが発生したり、またそれを回避するために設計上余計な制約が必要とされるため
  *   データの反映は即座に行われるが、disk_write_count,disk_read_countは追い出しのタイミングやキャッシュミスのタイミングで加算する
@@ -36,7 +38,8 @@ public:
     template<typename T>
     void disk_write(const disk_addr_t addr, const T& val)
     {
-        write(addr.m_addr, reinterpret_cast<const std::byte*>(&val), sizeof(T));
+        insert_address_range(addr.m_addr, sizeof(T), true);
+        disk_write_raw(addr, val);
     }
 
     /**
@@ -46,9 +49,8 @@ public:
     template<typename T>
     T disk_read(const disk_addr_t addr)
     {
-        T val;
-        read(addr.m_addr, reinterpret_cast<std::byte*>(&val), sizeof(T));
-        return val;
+        insert_address_range(addr.m_addr, sizeof(T), false);
+        return disk_read_raw<T>(addr);
     }
 
     /**
@@ -64,8 +66,7 @@ public:
     template<typename T>
     static void disk_write_raw(const disk_addr_t addr, const T& val)
     {
-        std::byte* disk_data = reinterpret_cast<std::byte*>(addr.m_addr);
-        for (std::size_t i = 0; i < sizeof(T); i++) { disk_data[i] = reinterpret_cast<const std::byte*>(&val)[i]; }
+        *reinterpret_cast<T*>(addr.m_addr) = val;
     }
 
     /**
@@ -80,10 +81,7 @@ public:
     template<typename T>
     static T disk_read_raw(const disk_addr_t addr)
     {
-        T val;
-        const std::byte* disk_data = reinterpret_cast<const std::byte*>(addr.m_addr);
-        for (std::size_t i = 0; i < sizeof(T); i++) { reinterpret_cast<std::byte*>(&val)[i] = disk_data[i]; }
-        return val;
+        return *reinterpret_cast<const T*>(addr.m_addr);
     }
 
     /**
@@ -120,13 +118,11 @@ private:
     uintptr_t get_page_addr(const uintptr_t addr) const;
     std::set<page_item, page_item::addr_comparator_t>::iterator find_by_addr(const uintptr_t page_addr) const;
     void delete_LRU();
-    void insert_cache(const uintptr_t page_addr, const bool update);
-    void write(const uintptr_t addr, const std::byte* data, const std::size_t size);
-    void read(const uintptr_t addr, std::byte* buf, const std::size_t size);
+    void insert_page(const uintptr_t page_addr, const bool update);
+    void insert_address_range(const uintptr_t addr, const std::size_t size, const bool update);
 
     statistic_info m_statistic;
     uint64_t m_time = 0;
     std::set<page_item, page_item::time_comparator_t> m_pages_by_time;
     std::set<page_item, page_item::addr_comparator_t> m_pages_by_addr;
-    std::set<std::size_t> m_empty_indexes;
 };
