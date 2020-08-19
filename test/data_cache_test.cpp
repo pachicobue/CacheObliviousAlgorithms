@@ -37,45 +37,6 @@ TEST(DataCacheTest, Constructor)
     ASSERT_EQ(dcache.statistic().disk_write_count, 0);
 }
 
-TEST(DataCacheTest, Read)
-{
-    rng_base<std::mt19937> rng(seed);
-    constexpr std::size_t B = 8;
-    constexpr std::size_t M = 120;
-    data_cache dcache(B, M);
-    const std::size_t N = 100;
-    std::vector<Data> datas(N);
-    for (std::size_t i = 0; i < N; i++) { datas[i] = randomData(); }
-    const std::size_t T = 1000;
-    for (std::size_t t = 0; t < T; t++) {
-        const std::size_t index = rng.val<std::size_t>(0, N - 1);
-        const auto data         = dcache.disk_read<Data>(reinterpret_cast<uintptr_t>(&datas[index]));
-        ASSERT_EQ(datas[index], data);
-    }
-}
-
-TEST(DataCacheTest, Write_Random)
-{
-    rng_base<std::mt19937> rng(seed);
-    constexpr std::size_t B = 16;
-    constexpr std::size_t M = 160;
-    data_cache dcache(B, M);
-    const std::size_t N = 100;
-    std::vector<Data> datas(N), dests(N);
-    for (std::size_t i = 0; i < N; i++) { datas[i] = randomData(); }
-    const std::size_t T = 1000;
-    for (std::size_t t = 0; t < T; t++) {
-        const std::size_t index = rng.val<std::size_t>(0, N - 1);
-        dcache.disk_write(reinterpret_cast<uintptr_t>(&dests[index]), datas[index]);
-    }
-    for (std::size_t t = 0; t < T; t++) {
-        const std::size_t index = rng.val<std::size_t>(0, N - 1);
-        const auto data         = dcache.disk_read<Data>(reinterpret_cast<uintptr_t>(&dests[index]));
-        ASSERT_EQ(datas[index], data);
-        ASSERT_EQ(datas[index], dests[index]);
-    }
-}
-
 TEST(DataCacheTest, ReadWrite)
 {
     rng_base<std::mt19937> rng(seed);
@@ -83,25 +44,63 @@ TEST(DataCacheTest, ReadWrite)
     constexpr std::size_t M = 160;
     data_cache dcache(B, M);
     const std::size_t N = 100;
-    std::vector<Data> datas(N), actuals(N);
+    disk_vector<Data> datas(N);
+    std::vector<Data> actuals(N);
     for (std::size_t i = 0; i < N; i++) {
         const Data data = randomData();
-        datas[i] = actuals[i] = data;
+        actuals[i]      = data;
+        dcache.disk_write(datas.addr(i), data);
     }
     const std::size_t T = 10000;
     for (std::size_t t = 0; t < T; t++) {
         const std::size_t type  = rng.val<std::size_t>(0, 1);
         const std::size_t index = rng.val<std::size_t>(0, N - 1);
         if (type == 0) {
-            const auto data   = dcache.disk_read<Data>(reinterpret_cast<uintptr_t>(&datas[index]));
+            const auto data   = dcache.disk_read<Data>(datas.addr(index));
             const auto actual = actuals[index];
             ASSERT_EQ(data, actual);
         } else {
             const auto data = randomData();
-            dcache.disk_write(reinterpret_cast<uintptr_t>(&datas[index]), data);
+            dcache.disk_write(datas.addr(index), data);
             actuals[index] = data;
         }
     }
+}
+
+TEST(DataCacheTest, ReadWriteRaw)
+{
+    rng_base<std::mt19937> rng(seed);
+    constexpr std::size_t B = 16;
+    constexpr std::size_t M = 160;
+    data_cache dcache(B, M);
+    const std::size_t N = 100;
+    disk_vector<Data> datas(N);
+    std::vector<Data> actuals(N);
+    for (std::size_t i = 0; i < N; i++) {
+        const Data data = randomData();
+        actuals[i]      = data;
+        dcache.disk_write_raw(datas.addr(i), data);
+    }
+    const std::size_t T = 10000;
+    for (std::size_t t = 0; t < T; t++) {
+        const std::size_t type  = rng.val<std::size_t>(0, 1);
+        const std::size_t index = rng.val<std::size_t>(0, N - 1);
+        if (type == 0) {
+            const auto data   = dcache.disk_read_raw<Data>(datas.addr(index));
+            const auto actual = actuals[index];
+            ASSERT_EQ(data, actual);
+        } else {
+            const auto data = randomData();
+            dcache.disk_write_raw(datas.addr(index), data);
+            actuals[index] = data;
+        }
+    }
+    ASSERT_EQ(dcache.statistic().disk_read_count, 0);
+    ASSERT_EQ(dcache.statistic().disk_write_count, 0);
+
+    const auto data   = data_cache::disk_read_raw<Data>(datas.addr(0));
+    const auto actual = actuals[0];
+    ASSERT_EQ(data, actual);
 }
 
 TEST(DataCacheTest, Flush)
@@ -111,9 +110,9 @@ TEST(DataCacheTest, Flush)
     constexpr std::size_t M = 160;
     data_cache dcache(B, M);
     const std::size_t N = 1;
-    std::vector<Data> actuals(N);
+    disk_vector<Data> datas(N);
     const Data data = randomData();
-    dcache.disk_write(reinterpret_cast<uintptr_t>(&actuals[0]), data);
+    dcache.disk_write(datas.addr(0), data);
     ASSERT_EQ(dcache.statistic().disk_write_count, 0);
     dcache.flush();
     ASSERT_NE(dcache.statistic().disk_write_count, 0);
@@ -126,23 +125,12 @@ TEST(DataCacheTest, Reset)
     constexpr std::size_t M = 160;
     data_cache dcache{B, M};
     const std::size_t N = 3;
-    std::vector<Data> datas(N);
-    for (std::size_t i = 0; i < N; i++) { datas[i] = randomData(); }
-    const std::size_t T = 10000;
-    for (std::size_t t = 0; t < T; t++) {
-        const std::size_t type  = rng.val<std::size_t>(0, 1);
-        const std::size_t index = rng.val<std::size_t>(0, N - 1);
-        if (type == 0) {
-            dcache.disk_read<Data>(reinterpret_cast<uintptr_t>(&datas[index]));
-        } else {
-            const auto data = randomData();
-            dcache.disk_write(reinterpret_cast<uintptr_t>(&datas[index]), data);
-        }
-    }
+    disk_vector<Data> datas(N);
+    for (std::size_t i = 0; i < N; i++) { dcache.disk_write(datas.addr(i), randomData()); }
     dcache.reset();
     ASSERT_EQ(dcache.statistic().disk_read_count, 0);
     ASSERT_EQ(dcache.statistic().disk_write_count, 0);
-    dcache.disk_write<Data>(reinterpret_cast<uintptr_t>(&datas[0]), randomData());
+    dcache.disk_write<Data>(datas.addr(0), randomData());
     dcache.flush();
     ASSERT_NE(dcache.statistic().disk_read_count, 0);
     ASSERT_NE(dcache.statistic().disk_write_count, 0);

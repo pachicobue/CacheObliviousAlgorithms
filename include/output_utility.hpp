@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include <array>
 #include <iomanip>
 #include <iostream>
 #include <set>
@@ -16,6 +17,13 @@ inline void dump(T x, Args... args) { std::cerr << x << ",", dump(args...); }
                               << "(" << #__VA_ARGS__ << ") = ("), \
                    impl_do_not_touch::dump(__VA_ARGS__), std::cerr << ")" << std::endl
 
+template<typename T, std::size_t N>
+std::ostream& operator<<(std::ostream& os, const std::array<T, N>& v)
+{
+    os << "[";
+    for (const auto& e : v) { os << e << ","; }
+    return (os << "]" << std::endl);
+}
 template<typename T, typename A>
 inline std::ostream& operator<<(std::ostream& os, const std::vector<T, A>& v)
 {
