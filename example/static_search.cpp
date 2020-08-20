@@ -8,9 +8,16 @@
 #include "bit_utility.hpp"
 #include "config.hpp"
 #include "data_cache.hpp"
+#include "gnuplot.hpp"
 #include "rng_utility.hpp"
 
 namespace {
+
+bool flags[]             = {true, true, true};
+constexpr std::size_t N  = (1 << 20);
+constexpr std::size_t NN = ceil2(N + 1) - 1;
+constexpr std::size_t R  = (NN + 1) / 2;
+constexpr std::size_t T  = (1 << 12);
 
 struct node_t
 {
@@ -18,104 +25,128 @@ struct node_t
     std::size_t left = static_cast<std::size_t>(-1), right = static_cast<std::size_t>(-1);
 };
 
-inline std::size_t left(const std::size_t N)
+constexpr std::size_t LayoutKind               = 3;
+std::array<std::size_t, LayoutKind> StartIndss = {0, 0, 0};
+std::array<std::size_t, LayoutKind> Hss        = {0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF};
+std::array<disk_array<std::size_t, NN>, LayoutKind> Layoutss;
+std::array<disk_array<node_t, NN>, LayoutKind> Nodess;
+
+inline std::size_t left(const std::size_t n)
 {
-    const std::size_t i = lsb(N) - 1;
-    return N - (1UL << i);
+    const std::size_t i = lsb(n) - 1;
+    return n - (1UL << i);
 }
-inline std::size_t right(const std::size_t N)
+inline std::size_t right(const std::size_t n)
 {
-    const std::size_t i = lsb(N) - 1;
-    return N + (1UL << i);
+    const std::size_t i = lsb(n) - 1;
+    return n + (1UL << i);
 }
 
 /**
  * @brief 完全に二分探索木のin-order順
  * @detail 普通の二分探索に相当
  */
-std::vector<std::size_t> in_order_layout(const std::size_t R)
+void in_order_layout(const std::size_t r, std::size_t& /*index*/)
 {
-    std::vector<std::size_t> ans(2 * R - 1);
-    std::iota(ans.begin(), ans.end(), 1);
-    return ans;
+    for (std::size_t i = 0; i < 2 * r - 1; i++) {
+        data_cache::disk_write_raw(Layoutss[0].addr(i), i + 1);
+    }
 }
 
 /**
  * @brief 完全に二分探索木で、H段の部分木をBlockとして連続するように並べる(端数は根に来るようにする)
  * @detail B-木に相当
  */
-std::vector<std::size_t> block_layout(const std::size_t R, const std::size_t H)
+void block_layout(const std::size_t r, const std::size_t h, std::size_t& index)
 {
-    const std::size_t height = lsb(R) + 1;
-    const std::size_t offset = R - (1UL << (height - 1));
-    const std::size_t uh     = (height - 1) % H + 1;
+    const std::size_t height = lsb(r) + 1;
+    const std::size_t offset = r - (1UL << (height - 1));
+    const std::size_t uh     = (height - 1) % h + 1;
     const std::size_t dh     = height - uh;
     std::vector<std::size_t> ans;
-    for (std::size_t i = 1; i < (1UL << uh); i++) { ans.push_back(i * (1UL << dh) + offset); }
+    for (std::size_t i = 1; i < (1UL << uh); i++) {
+        data_cache::disk_write_raw(Layoutss[1].addr(index++), i * (1UL << dh) + offset);
+    }
     if (dh != 0) {
         for (std::size_t i = 1; i <= (1UL << uh); i++) {
-            const auto sub = block_layout((1UL << (dh - 1)) * (i * 2 - 1) + offset, H);
-            for (const std::size_t e : sub) { ans.push_back(e); }
+            block_layout((1UL << (dh - 1)) * (i * 2 - 1) + offset, h, index);
         }
     }
-    return ans;
 }
 
 /**
  * @brief vEB layoutで並べる
  * @details block_layoutを再帰的に行う感じ
  */
-std::vector<std::size_t> vEB_layout(const std::size_t R)
+void vEB_layout(const std::size_t r, std::size_t& index)
 {
-    if (R & 1UL) { return std::vector<std::size_t>{R}; }
-    const std::size_t height     = lsb(R) + 1;
-    const std::size_t offset     = R - (1UL << (height - 1));
-    const std::size_t uh         = height / 2;
-    const std::size_t dh         = height - uh;
-    std::vector<std::size_t> ans = vEB_layout(R / (1UL << dh));
-    for (std::size_t& e : ans) { e *= (1UL << dh); }
+    if (r & 1UL) {
+        data_cache::disk_write_raw(Layoutss[2].addr(index++), r);
+        return;
+    }
+    const std::size_t height = lsb(r) + 1;
+    const std::size_t offset = r - (1UL << (height - 1));
+    const std::size_t uh     = height / 2;
+    const std::size_t dh     = height - uh;
+    std::size_t old_index    = index;
+    vEB_layout(r / (1UL << dh), index);
+    for (std::size_t i = old_index; i < index; i++) {
+        data_cache::disk_write_raw(Layoutss[2].addr(i), data_cache::disk_read_raw<std::size_t>(Layoutss[2].addr(i)) * (1UL << dh));
+    }
     if (dh > 0) {
         for (std::size_t i = 1; i <= (1UL << uh); i++) {
-            const auto sub = vEB_layout((1UL << (dh - 1)) * (i * 2 - 1) + offset);
-            for (const std::size_t e : sub) { ans.push_back(e); }
+            vEB_layout((1UL << (dh - 1)) * (i * 2 - 1) + offset, index);
         }
     }
-    return ans;
 }
 
-template<typename F>
-statistic_info static_search(const std::size_t B, const std::size_t M, const std::size_t N, const std::size_t T, F layout_func)
+std::vector<statistic_info> static_search(const std::size_t B, const std::size_t M, const std::size_t H, const std::size_t func_id)
 {
-    rng_base<std::mt19937> rng(Seed);
-    auto vs = rng.vec<data_t>(N, Min, Max);
-    std::sort(vs.begin(), vs.end());
-    std::size_t NN = 1;
-    for (; NN < N; NN = NN * 2 + 1) {}
-    const std::size_t R   = (NN + 1) / 2;
-    const auto layout_vec = layout_func(R);
-    disk_vector<std::size_t> layout(layout_vec.size());
-    for (std::size_t i = 0; i < layout_vec.size(); i++) {
-        data_cache::disk_write_raw(layout.addr(i), layout_vec[i]);
-    }
-    std::vector<std::size_t> poss(NN + 1);
-    for (std::size_t i = 0; i < NN; i++) {
-        poss[data_cache::disk_read_raw<std::size_t>(layout.addr(i))] = i;
-    }
-    disk_vector<node_t> nodes(NN);
-    for (std::size_t i = 0; i < NN; i++) {
-        const std::size_t ord = data_cache::disk_read_raw<std::size_t>(layout.addr(i));
-        node_t node;
-        node.val = ord > N ? Max + 1 : vs[ord - 1];
-        if ((ord & 1UL) == 0) {
-            node.left  = poss[left(ord)];
-            node.right = poss[right(ord)];
+    static rng_base<std::mt19937> rng(Seed);
+    static std::vector<data_t> vss[] = {[&](std::vector<data_t>&& vs) {
+                                            return std::sort(vs.begin(), vs.end()), vs.push_back(Max + 1), vs;
+                                        }(rng.vec<data_t>(N, Min, Max)),
+                                        [&](std::vector<data_t>&& vs) {
+                                            return std::sort(vs.begin(), vs.end()), vs.push_back(Max + 1), vs;
+                                        }(rng.vec<data_t>(N, Min, Max)),
+                                        [&](std::vector<data_t>&& vs) {
+                                            return std::sort(vs.begin(), vs.end()), vs.push_back(Max + 1), vs;
+                                        }(rng.vec<data_t>(N, Min, Max))};
+    if (Hss[func_id] != H) {
+        Hss[func_id]      = H;
+        std::size_t index = 0;
+        if (func_id == 0) {
+            in_order_layout(R, index);
+        } else if (func_id == 1) {
+            block_layout(R, H, index);
+        } else if (func_id == 2) {
+            vEB_layout(R, index);
+        } else {
+            assert(false);
         }
-        data_cache::disk_write_raw(nodes.addr(i), node);
+        std::vector<std::size_t> poss(NN + 1);
+        const auto& layout = Layoutss[func_id];
+        const auto& vs     = vss[func_id];
+        for (std::size_t i = 0; i < NN; i++) {
+            poss[data_cache::disk_read_raw<std::size_t>(layout.addr(i))] = i;
+        }
+        StartIndss[func_id] = poss[R];
+        for (std::size_t i = 0; i < NN; i++) {
+            const std::size_t ord = data_cache::disk_read_raw<std::size_t>(layout.addr(i));
+            node_t node;
+            node.val = ord > N ? Max + 1 : vs[ord - 1];
+            if ((ord & 1UL) == 0) {
+                node.left  = poss[left(ord)];
+                node.right = poss[right(ord)];
+            }
+            data_cache::disk_write_raw(Nodess[func_id].addr(i), node);
+        }
     }
+
     auto lower_bound = [&](data_cache& dcache, const data_t& x) -> data_t {
         data_t ans = Max + 1;
-        for (std::size_t ind = poss[R]; ind != static_cast<std::size_t>(-1);) {
-            const node_t node = dcache.template disk_read<node_t>(nodes.addr(ind));
+        for (std::size_t ind = StartIndss[func_id]; ind != static_cast<std::size_t>(-1);) {
+            const node_t node = dcache.template disk_read<node_t>(Nodess[func_id].addr(ind));
             if (node.val == x) { return x; }
             if (node.val < x) {
                 ind = node.right;
@@ -126,47 +157,61 @@ statistic_info static_search(const std::size_t B, const std::size_t M, const std
         }
         return ans;
     };
-    vs.push_back(Max + 1);
-
-    statistic_info info;
+    std::vector<statistic_info> infos;
     for (std::size_t t = 0; t < T; t++) {
         data_cache dcache(B, M);
-        const data_t qx     = rng.val<data_t>(Min, Max);
-        const data_t actual = *std::lower_bound(vs.begin(), vs.end(), qx);
-        const data_t ans    = lower_bound(dcache, qx);
+        const data_t qx                   = t == 0 ? Min : t + 1 == T ? Max : rng.val<data_t>(Min, Max);
+        [[maybe_unused]] const data_t ans = lower_bound(dcache, qx);
+#ifndef NDEBUG
+        [[maybe_unused]] const data_t actual = *std::lower_bound(vss[func_id].begin(), vss[func_id].end(), qx);
         assert(actual == ans);
+#endif
         dcache.flush();
-        const auto [QR, QW] = dcache.statistic();
-        info.disk_read_count += QR;
-        info.disk_write_count += QW;
+        infos.push_back(dcache.statistic());
     }
-    return info;
+    return infos;
 }
 }  // namespace
 
-statistic_info InOrderLayout(const std::size_t B, const std::size_t M, const std::size_t N, const std::size_t T)
+std::vector<statistic_info> InOrderLayout(const std::size_t B, const std::size_t M)
 {
-    return static_search(B, M, N, T, in_order_layout);
+    return static_search(B, M, 0, 0);
 }
 
-statistic_info BlockLayout(const std::size_t B, const std::size_t M, const std::size_t H, std::size_t N, const std::size_t T)
+std::vector<statistic_info> BlockLayout(const std::size_t B, const std::size_t M, const std::size_t H)
 {
-    return static_search(B, M, N, T, [&](const std::size_t R) { return block_layout(R, H); });
+    return static_search(B, M, H, 1);
 }
 
-statistic_info vEB_Layout(const std::size_t B, const std::size_t M, const std::size_t N, const std::size_t T)
+std::vector<statistic_info> vEB_Layout(const std::size_t B, const std::size_t M)
 {
-    return static_search(B, M, N, T, vEB_layout);
+    return static_search(B, M, 0, 2);
 }
 
 int main()
 {
-    bool flags[]            = {true, true, true};
-    constexpr std::size_t N = (1 << 16);
-    constexpr std::size_t T = (1 << 8);
-    constexpr std::size_t M = (1 << 16);
+    gp_stream gout1;  // Total CacheMiss
+    gp_stream gout2;  // Max CacheMiss
     std::cout << "# Static Search Complexity #" << std::endl;
+    gout1 << "set size 4,4\n";
+    gout1 << "set multiplot layout 2,2\n";
+    gout1 << "set title \'Searching For Static Data\'\n";
+    gout1 << "set xlabel \'Cache Line Size [byte]\'\n";
+    gout1 << "set ylabel \'Cache Miss (Max) [times]\'\n";
+    gout1 << "set logscale x\n";
+
+    gout2 << "set size 4,4\n";
+    gout2 << "set multiplot layout 2,2\n";
+    gout2 << "set title \'Searching For Static Data\'\n";
+    gout2 << "set xlabel \'Cache Line Size [byte]\'\n";
+    gout2 << "set ylabel \'Cache Miss (Total) [times]\'\n";
+    gout2 << "set logscale x\n";
+    constexpr std::size_t MinB = 50;
+    constexpr std::size_t M    = (1 << 24);
     if (flags[0]) {
+        gout1 << "plot \'-\' u 1:2 title \'InOrder Layout(B-Q)\' w lp\n";
+        gout2 << "plot \'-\' u 1:2 title \'InOrder Layout(B-Q)\' w lp\n";
+
         std::cout << "# in-order layout" << std::endl;
         std::cout << ("#" + std::string(6, ' ') + "B") << " "
                   << (std::string(7, ' ') + "M") << " "
@@ -174,10 +219,16 @@ int main()
                   << (std::string(7, ' ') + "T") << " | "
                   << (std::string(6, ' ') + "QR") << " "
                   << (std::string(6, ' ') + "QW") << " "
-                  << (std::string(7, ' ') + "Q") << std::endl;
-        for (std::size_t B = 1; B * B <= M; B++) {
-            const auto [QR, QW] = InOrderLayout(B, M, N, T);
-            const auto Q        = QR + QW;
+                  << (std::string(7, ' ') + "Q") << " "
+                  << (std::string(2, ' ') + "Q(Max)") << std::endl;
+        for (std::size_t B = MinB; B * B <= M; B++) {
+            uint64_t QR = 0, QW = 0;
+            uint64_t QMax = 0;
+            for (const auto [R, W] : InOrderLayout(B, M)) {
+                QR += R, QW += W;
+                QMax = std::max(QMax, R + W);
+            }
+            const uint64_t Q = QR + QW;
             std::cout << std::setw(8) << B << " "
                       << std::setw(8) << M << " "
                       << std::setw(8) << N << " "
@@ -185,11 +236,22 @@ int main()
                       << std::setw(8) << QR << " "
                       << std::setw(8) << QW << " "
                       << std::setw(8) << Q << " "
-                      << std::endl;
+                      << std::setw(8) << QMax << std::endl;
+            gout1 << std::setw(8) << B << " "
+                  << std::setw(8) << Q << "\n";
+            gout2 << std::setw(8) << B << " "
+                  << std::setw(8) << QMax << "\n";
         }
+        gout1 << "e\n";
+        gout1.flush();
+        gout2 << "e\n";
+        gout2.flush();
         std::cout << std::endl;
     }
     if (flags[1]) {
+        gout1 << "plot \'-\' u 1:2 title \'Block Layout(B-Q)\' w lp\n";
+        gout2 << "plot \'-\' u 1:2 title \'Block Layout(B-Q)\' w lp\n";
+
         std::cout << "# block layout" << std::endl;
         std::cout << ("#" + std::string(6, ' ') + "B") << " "
                   << (std::string(7, ' ') + "M") << " "
@@ -198,13 +260,19 @@ int main()
                   << (std::string(7, ' ') + "T") << " | "
                   << (std::string(6, ' ') + "QR") << " "
                   << (std::string(6, ' ') + "QW") << " "
-                  << (std::string(7, ' ') + "Q") << std::endl;
+                  << (std::string(7, ' ') + "Q") << " "
+                  << (std::string(2, ' ') + "Q(Max)") << std::endl;
         std::size_t H  = 1;
         std::size_t SZ = sizeof(node_t);
-        for (std::size_t B = 1; B * B <= M; B++) {
+        for (std::size_t B = MinB; B * B <= M; B++) {
             if (SZ * 2 + 1 <= B) { H++, SZ = SZ * 2 + 1; }
-            const auto [QR, QW] = BlockLayout(B, M, H, N, T);
-            const auto Q        = QR + QW;
+            uint64_t QR = 0, QW = 0;
+            uint64_t QMax = 0;
+            for (const auto [R, W] : BlockLayout(B, M, H)) {
+                QR += R, QW += W;
+                QMax = std::max(QMax, R + W);
+            }
+            const uint64_t Q = QR + QW;
             std::cout << std::setw(8) << B << " "
                       << std::setw(8) << M << " "
                       << std::setw(8) << H << " "
@@ -212,11 +280,23 @@ int main()
                       << std::setw(8) << T << "   "
                       << std::setw(8) << QR << " "
                       << std::setw(8) << QW << " "
-                      << std::setw(8) << Q << std::endl;
+                      << std::setw(8) << Q << " "
+                      << std::setw(8) << QMax << std::endl;
+            gout1 << std::setw(8) << B << " "
+                  << std::setw(8) << Q << "\n";
+            gout2 << std::setw(8) << B << " "
+                  << std::setw(8) << QMax << "\n";
         }
+        gout1 << "e\n";
+        gout1.flush();
+        gout2 << "e\n";
+        gout2.flush();
         std::cout << std::endl;
     }
     if (flags[2]) {
+        gout1 << "plot \'-\' u 1:2 title \'vEB Layout(B-Q)\' w lp\n";
+        gout2 << "plot \'-\' u 1:2 title \'vEB Layout(B-Q)\' w lp\n";
+
         std::cout << "# vEB layout" << std::endl;
         std::cout << ("#" + std::string(6, ' ') + "B") << " "
                   << (std::string(7, ' ') + "M") << " "
@@ -224,10 +304,16 @@ int main()
                   << (std::string(7, ' ') + "T") << " | "
                   << (std::string(6, ' ') + "QR") << " "
                   << (std::string(6, ' ') + "QW") << " "
-                  << (std::string(7, ' ') + "Q") << std::endl;
-        for (std::size_t B = 1; B * B <= M; B++) {
-            const auto [QR, QW] = vEB_Layout(B, M, N, T);
-            const auto Q        = QR + QW;
+                  << (std::string(7, ' ') + "Q") << " "
+                  << (std::string(2, ' ') + "Q(Max)") << std::endl;
+        for (std::size_t B = MinB; B * B <= M; B++) {
+            uint64_t QR = 0, QW = 0;
+            uint64_t QMax = 0;
+            for (const auto [R, W] : vEB_Layout(B, M)) {
+                QR += R, QW += W;
+                QMax = std::max(QMax, R + W);
+            }
+            const uint64_t Q = QR + QW;
             std::cout << std::setw(8) << B << " "
                       << std::setw(8) << M << " "
                       << std::setw(8) << N << " "
@@ -235,8 +321,16 @@ int main()
                       << std::setw(8) << QR << " "
                       << std::setw(8) << QW << " "
                       << std::setw(8) << Q << " "
-                      << std::endl;
+                      << std::setw(8) << QMax << std::endl;
+            gout1 << std::setw(8) << B << " "
+                  << std::setw(8) << Q << "\n";
+            gout2 << std::setw(8) << B << " "
+                  << std::setw(8) << QMax << "\n";
         }
+        gout1 << "e\n";
+        gout1.flush();
+        gout2 << "e\n";
+        gout2.flush();
     }
     return 0;
 }
