@@ -7,7 +7,8 @@
 
 /**
  * @brief Data Cacheの仮想化
- * @details
+ * @details 
+ * Cache Oblivious Modelに従って以下のように設定
  * - ブロックサイズはB (B個のdisk_addr_t)
  * - メモリサイズはM
  * - Fully Assiciative
@@ -17,7 +18,7 @@
  *   disk_addr_t <-> uintptr_t への変換を行って管理
  * - 今回のモデルではキャッシュミス回数だけに興味があるので、キャッシュへのデータのコピーは行わない
  *   メモリリークが発生したり、またそれを回避するために設計上余計な制約が必要とされるため
- *   データの反映は即座に行われるが、disk_write_count,disk_read_countは追い出しのタイミングやキャッシュミスのタイミングで加算する
+ * - データの反映は即座に行われるが、disk_write_count,disk_read_countは追い出しのタイミングやキャッシュミスのタイミングで加算する
  */
 class data_cache
 {

@@ -38,8 +38,9 @@ private:
  * @note 
  * - intなどをメンバに持つ構造体にも適用可能
  *   正確にはstruct* に全ての情報が含まれているような構造体
- * - std::vector,std::stringなどは例外で、これを使うのは反則(disk_vectorを使うようにする)
- *   std::vectorのポインタ自体には配列情報が含まれていないのに、アクセスできるというズルができてしまう
+ * - std::vector,std::stringなどは例外
+ *   std::vectorのポインタ自体には配列情報が含まれていないのに、アクセスできるというズルができてしまうため
+ *   disk_vectorを使うか、std::vectorを読み込む際には配列部分も明示的に読み込むようにする
  * - 一応固定長配列はOKだが、disk_arrayを使ったほうがわかりやすい気がする
  */
 template<typename T>
