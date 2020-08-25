@@ -39,6 +39,3 @@ add_subdirectory(sim_example)
 
 add_subdirectory(actual_example)
 
-#add_example(scanning)
-#add_example(median)
-#add_example(matrix_product)
