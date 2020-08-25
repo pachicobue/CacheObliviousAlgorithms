@@ -1,4 +1,8 @@
 #pragma once
+/**
+ * @file statistic_info.hpp
+ * @brief キャッシュミス回数の統計情報
+ */
 #include <cstdint>
 /**
  * @brief 統計情報

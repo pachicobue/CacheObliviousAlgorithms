@@ -1,40 +1,20 @@
 #include <cassert>
 #include <vector>
 
-#include "data_cache.hpp"
-#include "output_utility.hpp"
+#include "simulator/data_cache.hpp"
 
 data_cache::data_cache(const std::size_t B, const std::size_t M) : PageSize{B}, CacheLineNum{(M + B - 1) / B}, CacheSize{PageSize * CacheLineNum} {}
 
-statistic_info data_cache::statistic() const
+statistic_info data_cache::statistic()
 {
+    flush();
     return m_statistic;
 }
 
-void data_cache::print_summary() const
+void data_cache::insert_address_range(const uintptr_t addr, const std::size_t size, const bool update)
 {
-    std::cout << "[Cache Property]" << std::endl;
-    std::cout << "- page size (B): " << PageSize << " byte" << std::endl;
-    std::cout << "- cache size(M): " << CacheSize << " byte" << std::endl;
-    std::cout << "- cacheline num: " << CacheLineNum << " lines" << std::endl;
-    std::cout << "[Statistics]" << std::endl;
-    std::cout << "- disk write   : " << m_statistic.disk_write_count << " times" << std::endl;
-    std::cout << "- disk read    : " << m_statistic.disk_read_count << " times" << std::endl;
-}
-
-void data_cache::debug_print() const
-{
-    std::cout << "[Cache Property]" << std::endl;
-    std::cout << "- page size (B): " << PageSize << " byte" << std::endl;
-    std::cout << "- cache size(M): " << CacheSize << " byte" << std::endl;
-    std::cout << "- cacheline num: " << CacheLineNum << " lines" << std::endl;
-    std::cout << "[Statistics]" << std::endl;
-    std::cout << "- disk write   : " << m_statistic.disk_write_count << " times" << std::endl;
-    std::cout << "- disk read    : " << m_statistic.disk_read_count << " times" << std::endl;
-    std::cout << "[Internal Status]" << std::endl;
-    std::cout << "- time         : " << m_time << std::endl;
-    std::cout << "- pages(addr)  : " << m_pages_by_addr << std::endl;
-    std::cout << "- pages(time)  : " << m_pages_by_time << std::endl;
+    const uintptr_t end_addr = addr + static_cast<uintptr_t>(size);
+    for (uintptr_t page_addr = get_page_addr(addr); page_addr < end_addr; page_addr += PageSize) { insert_page(page_addr, update); }
 }
 
 void data_cache::flush()
@@ -49,15 +29,6 @@ void data_cache::flush()
         page_item.update = false;
         m_pages_by_addr.insert(page_item), m_pages_by_time.insert(page_item);
     }
-}
-
-void data_cache::reset()
-{
-    m_statistic.disk_write_count = 0;
-    m_statistic.disk_read_count  = 0;
-    m_time                       = 0;
-    m_pages_by_time.clear();
-    m_pages_by_addr.clear();
 }
 
 uintptr_t data_cache::get_page_addr(const uintptr_t addr) const
@@ -94,10 +65,4 @@ void data_cache::insert_page(const uintptr_t page_addr, const bool update)
         m_pages_by_addr.insert(item), m_pages_by_time.insert(item);
     }
     assert(m_pages_by_addr.size() == m_pages_by_time.size());
-}
-
-void data_cache::insert_address_range(const uintptr_t addr, const std::size_t size, const bool update)
-{
-    const uintptr_t end_addr = addr + static_cast<uintptr_t>(size);
-    for (uintptr_t page_addr = get_page_addr(addr); page_addr < end_addr; page_addr += PageSize) { insert_page(page_addr, update); }
 }
