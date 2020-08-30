@@ -3,6 +3,7 @@
 
 #include "common/gnuplot.hpp"
 #include "common/rng.hpp"
+#include "sim_algorithm/b_tree.hpp"
 #include "sim_algorithm/binary_search.hpp"
 #include "sim_algorithm/block_search.hpp"
 #include "sim_algorithm/vEB_search.hpp"
@@ -65,6 +66,31 @@ int main()
             if (((1UL << (H + 1)) - 1) * SZ <= B) {
                 H++;
                 searcher = block_search{vs, H};
+            }
+            uint64_t QMax = 0;
+            for (std::size_t t = 0; t < T; t++) {
+                sim::initialize(B, M);  // リセット
+                const data_t qx                 = qxs[t];
+                [[maybe_unused]] const auto ans = searcher.lower_bound(qx);
+                const auto [R, W]               = sim::cache_miss_count();
+                QMax                            = std::max(QMax, R + W);
+            }
+            gout << std::setw(8) << B << " "
+                 << std::setw(8) << QMax << std::endl;
+        }
+        gout << "e" << std::endl;
+    }
+
+    {
+        b_tree searcher{vs, 2};
+        gout << "plot \'-\' u 1:2 title \'B-Tree (B-Q)\' w lp" << std::endl;
+        std::cout << "# B-Tree" << std::endl;
+        std::size_t K = 2;
+        for (std::size_t B = MinB; B <= MaxB; B++) {
+            const std::size_t SZ = (2 * K + 1) * sizeof(data_t) + 16 * (K + 1);
+            if (SZ <= B) {
+                K++;
+                searcher = b_tree{vs, K};
             }
             uint64_t QMax = 0;
             for (std::size_t t = 0; t < T; t++) {
