@@ -11,6 +11,7 @@
 #include <array>
 #include <cassert>
 #include <cstdint>
+#include <iostream>
 #include <vector>
 
 class memory_bus;
@@ -54,6 +55,11 @@ public:
      * - 基本的には前計算でのみ使う
      */
     const T& illegal_ref() const { return m_val; }
+
+    /**
+     * @brief ストリーム出力
+     */
+    friend std::ostream& operator<<(std::ostream& os, const disk_var& dv) { return os << dv.m_val; }
 
 private:
     T m_val;
