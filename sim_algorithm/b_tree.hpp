@@ -3,6 +3,8 @@
  * @file b_tree.hpp
  * @brief B-木
  */
+#include <memory>
+
 #include "config.hpp"
 #include "simulator/disk_variable.hpp"
 /**
@@ -23,7 +25,7 @@ class b_tree
     {
         node_t() = default;
         std::vector<disk_var<data_t>> keys{};
-        std::vector<disk_var<node_t*>> sons{};
+        std::vector<disk_var<std::shared_ptr<node_t>>> sons{};
         disk_var<bool> leaf{false};
     };
 
@@ -39,7 +41,7 @@ public:
      * @param K[in] キー数に関する定数
      * @param datas[in] 初期データ
      */
-    b_tree(const std::size_t K_, const std::vector<data_t>& datas);
+    b_tree(const std::vector<data_t>& datas, const std::size_t K_);
 
     /**
      * @brief 挿入
@@ -54,9 +56,10 @@ public:
     data_t lower_bound(const data_t key) const;
 
     using node_t = node_t;
+    using ptr_t  = std::shared_ptr<node_t>;
+    std::size_t K;
 
 private:
     void illegal_insert(const data_t key);
-    const std::size_t K;
-    node_t* m_root;
+    ptr_t m_root;
 };

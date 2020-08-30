@@ -19,7 +19,7 @@ TEST(BTreeTest, LowerBound)
     constexpr std::size_t T = (1 << 10);
     auto vs                 = rng.vec(N, Min, Max);
     vs.erase(std::unique(vs.begin(), vs.end()), vs.end());
-    const b_tree searcher(K, vs);
+    const b_tree searcher(vs, K);
     std::sort(vs.begin(), vs.end());
     vs.push_back(Max + 1);
     for (std::size_t t = 0; t < T; t++) {

@@ -3,11 +3,11 @@
 
 namespace {
 
-using ptr_t = b_tree::node_t*;
+using ptr_t = b_tree::ptr_t;
 
 ptr_t alloc()
 {
-    return new b_tree::node_t{};
+    return std::make_shared<b_tree::node_t>();
 }
 
 void split_child(ptr_t x, const std::size_t i, const std::size_t K_)
@@ -56,7 +56,7 @@ b_tree::b_tree(const std::size_t K_) : K{K_}, m_root{alloc()}
     m_root->leaf = true;
 }
 
-b_tree::b_tree(const std::size_t K_, const std::vector<data_t>& datas) : K{K_}, m_root{alloc()}
+b_tree::b_tree(const std::vector<data_t>& datas, const std::size_t K_) : K{K_}, m_root{alloc()}
 {
     m_root->leaf = true;
     for (const auto data : datas) {

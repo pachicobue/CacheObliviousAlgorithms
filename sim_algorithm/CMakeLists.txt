@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-add_library(SimAlgorithm STATIC vEB_search.cpp block_search.cpp binary_search.cpp)
+add_library(SimAlgorithm STATIC vEB_search.cpp block_search.cpp binary_search.cpp b_tree.cpp)
 
 add_unittest(b_tree_test b_tree.cpp)
 add_unittest(vEB_search_test vEB_search.cpp)
