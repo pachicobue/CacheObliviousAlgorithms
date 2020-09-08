@@ -1,0 +1,9 @@
+{
+    "configurations": [
+        {
+            "name": "WSL2",
+            "cppStandard": "c++20"
+        }
+    ],
+    "version": 4
+}
