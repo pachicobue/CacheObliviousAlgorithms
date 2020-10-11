@@ -1,6 +1,6 @@
 #include "gnuplot.hpp"
 
-gp_stream::gp_stream() : fp{popen("gnuplot -geometry 960x960 -persist", "w")},
+gp_stream::gp_stream() : fp{popen("gnuplot -geometry -persist", "w")},
                          p_fb{new __gnu_cxx::stdio_filebuf<char>(fp, std::ios_base::out)},
                          os{static_cast<std::streambuf*>(p_fb)}
 {

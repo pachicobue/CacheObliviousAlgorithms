@@ -16,7 +16,7 @@ public:
     template<typename T>
     const T& read(const disk_var<T>& dv)
     {
-        m_cache.insert_address_range(dv.addr(), sizeof(T), true);
+        m_cache.insert_address_range(dv.addr(), sizeof(T), false);
         return dv.m_val;
     }
 

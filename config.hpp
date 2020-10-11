@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
-using data_t            = int64_t;
-constexpr data_t Min    = -(static_cast<data_t>(1) << 20);
-constexpr data_t Max    = static_cast<data_t>(1) << 20;
-constexpr uint64_t Seed = 20200810;
+#include <limits>
+using data_t            = uint64_t;
+constexpr data_t Max    = std::numeric_limits<data_t>::max() / 2;
+constexpr data_t Min    = std::numeric_limits<data_t>::min() / 2;
+constexpr uint64_t Seed = 20201013;

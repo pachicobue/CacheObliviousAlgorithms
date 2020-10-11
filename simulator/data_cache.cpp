@@ -43,7 +43,6 @@ std::set<page_item, page_item::addr_comparator_t>::iterator data_cache::find_by_
 
 void data_cache::delete_LRU()
 {
-    assert(m_pages_by_time.size() == CacheLineNum);
     const auto item = *m_pages_by_time.begin();
     m_pages_by_time.erase(m_pages_by_time.begin()), m_pages_by_addr.erase(item);
     if (item.update) { m_statistic.disk_write_count++; }
@@ -55,14 +54,13 @@ void data_cache::insert_page(const uintptr_t page_addr, const bool update)
     if (it != m_pages_by_addr.end() and it->page_addr == page_addr) {
         auto item = *it;
         m_pages_by_addr.erase(it), m_pages_by_time.erase(item);
-        item.last_used_time = m_time++;
+        item.last_used_time = ++m_time;
         item.update |= update;
         m_pages_by_addr.insert(item), m_pages_by_time.insert(item);
     } else {
         if (m_pages_by_time.size() == CacheLineNum) { delete_LRU(); }
         m_statistic.disk_read_count++;
-        const auto item = page_item{m_time++, page_addr, update};
+        const auto item = page_item{++m_time, page_addr, update};
         m_pages_by_addr.insert(item), m_pages_by_time.insert(item);
     }
-    assert(m_pages_by_addr.size() == m_pages_by_time.size());
 }

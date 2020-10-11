@@ -49,38 +49,39 @@ std::vector<std::size_t> build_orders(const std::size_t root)
 vEB_search::vEB_search(std::vector<data_t> vs)
 {
     const std::size_t N                   = vs.size();
-    const std::size_t NN                  = ceil2(N + 1) - 1;
-    const std::size_t ROOT                = (NN + 1) / 2;
+    const std::size_t TN                  = ceil2(N + 1) - 1;
+    const std::size_t ROOT                = (TN + 1) / 2;
     const std::vector<std::size_t> orders = build_orders(ROOT);  // 1-indexed
-    std::vector<std::size_t> poss(NN + 1);
-    for (std::size_t i = 0; i < NN; i++) {
+    std::vector<std::size_t> poss(TN + 1);
+    for (std::size_t i = 0; i < TN; i++) {
         poss[orders[i]] = i;
     }
     std::sort(vs.begin(), vs.end());
-    m_root_index = poss[ROOT];
-    for (std::size_t i = 0; i < NN; i++) {
+    m_root_pos = poss[ROOT];
+    for (std::size_t i = 0; i < TN; i++) {
         const std::size_t order = orders[i];
-        node_t info{data_t{0}, static_cast<std::size_t>(-1), static_cast<std::size_t>(-1)};
-        info.value = order > N ? Max + 1 : vs[order - 1];
+        m_xs.push_back(order > N ? data_t{Max + 1} : vs[order - 1]);
         if ((order & 1UL) == 0) {
-            info.left  = poss[left(order)];
-            info.right = poss[right(order)];
+            m_ls.push_back(poss[left(order)]);
+            m_rs.push_back(poss[right(order)]);
+        } else {
+            m_ls.push_back(static_cast<std::size_t>(-1));
+            m_rs.push_back(static_cast<std::size_t>(-1));
         }
-        m_nodes.push_back(disk_var<node_t>{info});
     }
 }
 
-data_t vEB_search::lower_bound(const data_t x) const
+data_t vEB_search::lower_bound(const data_t v) const
 {
     data_t ans = Max + 1;
-    for (std::size_t index = m_root_index; index != static_cast<std::size_t>(-1);) {
-        const node_t info = sim::read<node_t>(m_nodes[index]);
-        if (info.value == x) { return x; }
-        if (info.value < x) {
-            index = info.right;
+    for (std::size_t pos = m_root_pos; pos != static_cast<std::size_t>(-1);) {
+        const data_t x = sim::read(m_xs[pos]);
+        if (x == v) { return v; }
+        if (x < v) {
+            pos = sim::read(m_rs[pos]);
         } else {
-            ans   = std::min(ans, info.value);
-            index = info.left;
+            ans = x;
+            pos = sim::read(m_ls[pos]);
         }
     }
     return ans;

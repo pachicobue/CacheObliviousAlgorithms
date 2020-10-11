@@ -23,21 +23,16 @@ public:
      * @param vs[in] データ配列
      * @param max_height[in] ブロックの最大高さ
      */
-    block_search(std::vector<data_t> vs, const std::size_t max_height);
+    block_search(std::vector<data_t> vs, const std::size_t block_height);
 
     /**
      * @brief LowerBoundクエリ
-     * @param x[in] 
+     * @param v[in] 
      */
-    data_t lower_bound(const data_t x) const;
+    data_t lower_bound(const data_t v) const;
 
 private:
-    struct node_t
-    {
-        data_t value;
-        std::size_t left;
-        std::size_t right;
-    };
-    std::size_t m_root_index;
-    std::vector<disk_var<node_t>> m_nodes;
+    std::size_t m_root_pos;
+    std::vector<disk_var<std::size_t>> m_ls, m_rs;
+    std::vector<disk_var<data_t>> m_xs;
 };

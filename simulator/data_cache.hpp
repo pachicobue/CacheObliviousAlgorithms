@@ -35,8 +35,7 @@ public:
      * @note
      * - flushが直前に呼ばれる
      */
-    statistic_info
-        statistic();
+    statistic_info statistic();
 
     /**
      * @brief キャッシュに[addr,addr+size)を含むブロックを追加する
